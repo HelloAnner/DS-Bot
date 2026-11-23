@@ -618,6 +618,7 @@ export function TeamSidebar(props) {
     const session = Object.values(list.byId).find(row => (row?.retainedBy?.mainView ?? 0) > 0)
     return roster.byId[session?.id]?.id
   })
+  const keyboardPick = useRef(null)
   const botNavigation = useRef(null)
   botNavigation.current = (event) => {
     if (event.defaultPrevented || document.querySelector('[aria-modal="true"], .bt-menu')) return
@@ -637,6 +638,7 @@ export function TeamSidebar(props) {
     if (event.repeat) return
     const next = adjacentBot(ids, activeBot, direction)
     if (next !== undefined) {
+      keyboardPick.current = next
       actions.openSession(next)
       if (leftDrawer) actions.setLeftDrawer?.(false)
     }
@@ -646,6 +648,13 @@ export function TeamSidebar(props) {
     [sections, order],
   )
   useListGlide(listRef, wideContent, glideKey)
+  useLayoutEffect(() => {
+    if (activeBot === undefined || keyboardPick.current !== activeBot) return
+    keyboardPick.current = null
+    if (mode === 'hidden') return
+    listRef.current?.querySelector(`[data-bot-id="${CSS.escape(activeBot)}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest', container: 'nearest' })
+  }, [activeBot, mode])
   useLandOnMainBot(roster, useSessions, actions)
   useReportReady(roster.ready, roster)
   const [dragId, setDragId] = useState(null)
@@ -851,6 +860,7 @@ export function TeamSidebar(props) {
   }, [mode])
 
   const navigate = (open, id) => {
+    keyboardPick.current = null
     const result = open(id)
     if (leftDrawer) actions.setLeftDrawer?.(false)
     return result

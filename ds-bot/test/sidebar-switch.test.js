@@ -118,6 +118,58 @@ for (const width of [390, 1023, 1024, 1280]) {
   }
 }
 
+test('keyboard navigation reveals the selected Bot once its chat opens', async () => {
+  await withDom('<div class="bt-list"><button data-bot-id="first"></button><button data-bot-id="last"></button></div>', ({ document, KeyboardEvent }) => {
+    const bots = [{ id: 'first', createdAt: 2 }, { id: 'last', createdAt: 1 }]
+    const byId = Object.fromEntries(bots.map(bot => [bot.id, bot]))
+    const list = document.querySelector('.bt-list')
+    const refs = []
+    const opened = []
+    const revealed = []
+    for (const row of list.children) row.scrollIntoView = options => revealed.push([row.dataset.botId, options.block])
+    const listeners = []
+    const useEffect = react.useEffect
+    react.useEffect = effect => listeners.push(effect)
+    const render = (active) => {
+      refs[0] = { current: list }
+      renderRefs = refs
+      refIndex = 0
+      layoutEffects = []
+      TeamSidebar({
+        wide: true, actions: { openSession: id => opened.push(id) },
+        useRoster: pick => pick({ bots, rooms: [], byId }), useUi: pick => pick({ unread: {} }), useRegistry: pick => pick({}),
+        useSessions: pick => pick({
+          ids: bots.map(bot => bot.id),
+          byId: Object.fromEntries(bots.map(bot => [bot.id, { id: bot.id, updatedAt: bot.createdAt, retainedBy: { mainView: Number(bot.id === active) } }])),
+        }),
+        useUpdate: () => ({}),
+      })
+      for (const effect of layoutEffects) effect()
+    }
+    const cleanups = []
+    try {
+      render('first')
+      for (const effect of listeners) {
+        cleanups.push(effect())
+      }
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowDown', altKey: true, cancelable: true }))
+      assert.deepEqual(opened, ['last'])
+      assert.deepEqual(revealed, [])
+      render('last')
+      assert.deepEqual(revealed, [['last', 'nearest']])
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', altKey: true, cancelable: true }))
+      render('first')
+      assert.deepEqual(opened, ['last', 'first'])
+      assert.deepEqual(revealed, [['last', 'nearest'], ['first', 'nearest']])
+    } finally {
+      for (const off of cleanups) off?.()
+      react.useEffect = useEffect
+      renderRefs = undefined
+      layoutEffects = undefined
+    }
+  })
+})
+
 test('a row picked from the floating drawer closes it', () => {
   viewport.innerWidth = 390
   const side = navigationSidebar(false, { leftDrawer: true })
@@ -762,9 +814,9 @@ for (const wide of [true, false]) {
 
 async function withDom(html, run) {
   const dom = new JSDOM(html)
-  const { document, MutationObserver } = dom.window
+  const { document, Element, MutationObserver } = dom.window
   const globals = {
-    document, MutationObserver, performance, setTimeout, clearTimeout,
+    document, Element, MutationObserver, performance, setTimeout, clearTimeout,
     requestAnimationFrame: next => setTimeout(next, 0), cancelAnimationFrame: clearTimeout,
     CSS: { escape: value => value },
   }

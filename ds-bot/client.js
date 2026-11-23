@@ -33871,6 +33871,7 @@ function TeamSidebar(props) {
     const session = Object.values(list.byId).find((row) => (row?.retainedBy?.mainView ?? 0) > 0);
     return roster.byId[session?.id]?.id;
   });
+  const keyboardPick = (0, import_react37.useRef)(null);
   const botNavigation = (0, import_react37.useRef)(null);
   botNavigation.current = (event) => {
     if (event.defaultPrevented || document.querySelector('[aria-modal="true"], .bt-menu')) return;
@@ -33887,6 +33888,7 @@ function TeamSidebar(props) {
     if (event.repeat) return;
     const next = adjacentBot(ids, activeBot, direction);
     if (next !== void 0) {
+      keyboardPick.current = next;
       actions.openSession(next);
       if (leftDrawer) actions.setLeftDrawer?.(false);
     }
@@ -33896,6 +33898,12 @@ function TeamSidebar(props) {
     [sections, order]
   );
   useListGlide(listRef, wideContent, glideKey);
+  (0, import_react37.useLayoutEffect)(() => {
+    if (activeBot === void 0 || keyboardPick.current !== activeBot) return;
+    keyboardPick.current = null;
+    if (mode === "hidden") return;
+    listRef.current?.querySelector(`[data-bot-id="${CSS.escape(activeBot)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest", container: "nearest" });
+  }, [activeBot, mode]);
   useLandOnMainBot(roster, useSessions, actions);
   useReportReady(roster.ready, roster);
   const [dragId, setDragId] = (0, import_react37.useState)(null);
@@ -34087,6 +34095,7 @@ function TeamSidebar(props) {
     };
   }, [mode]);
   const navigate = (open, id) => {
+    keyboardPick.current = null;
     const result = open(id);
     if (leftDrawer) actions.setLeftDrawer?.(false);
     return result;
