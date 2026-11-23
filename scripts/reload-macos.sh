@@ -2,19 +2,66 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-fail() { printf 'reload: %s\n' "$*" >&2; exit 1; }
-[[ $(uname -s) == Darwin ]] || fail 'This target installs the macOS app only.'
-arch=x64
-if [[ $(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || true) == 1 ]]; then arch=arm64; fi
-[[ $(node -p 'process.versions.node.split(".")[0]+":"+process.arch') == "24:$arch" ]] || fail "Put native Node.js 24 ($arch) first on PATH, as in release CI."
-
+mode=${1:-reload}
+fail() { printf '%s: %s\n' "$mode" "$*" >&2; exit 1; }
+[[ $mode == reload || $mode == restart ]] || fail 'Expected reload or restart.'
+[[ $(uname -s) == Darwin ]] || fail 'This target is for the macOS app only.'
 installed='/Applications/DS Bot.app'
 app_id='io.github.fei2411.dsbot'
+backups="$HOME/Library/Application Support/DS Bot App Backups"
 bundle_id() { /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist"; }
 verify_install_target() {
   [[ -d "$installed" && ! -L "$installed" && $(bundle_id "$installed") == "$app_id" ]] || fail "Expected an existing DS Bot bundle at $installed."
 }
+quit_app() {
+  # Explicit restart also handles an old copy opened from the workflow's backup folder.
+  /usr/bin/osascript -l JavaScript - "$installed" "$app_id" "${1:-}" <<'JXA'
+ObjC.import('AppKit')
+function run([installed, id, backups]) {
+  const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(id)
+  const paths = [installed]
+  for (let i = 0; i < apps.count; i++) {
+    const app = apps.objectAtIndex(i)
+    const url = app.bundleURL
+    if (!url || url.isNil()) continue
+    const path = ObjC.unwrap(url.path)
+    const name = path.slice(backups.length + 1).split('/')
+    const isBackup = backups && path.startsWith(backups + '/') && name.length === 2 && name[1] === 'DS Bot.app'
+    if (path !== installed && !isBackup) continue
+    if (!app.terminate && !app.terminated) throw Error('DS Bot declined to quit: ' + path)
+    if (isBackup) paths.push(path)
+  }
+  return paths.join('\n')
+}
+JXA
+}
+
+wait_for_quit() {
+  local paths=$1 i processes
+  for ((i=0; i<=30; i++)); do
+    processes=$(/bin/ps -ax -o comm=) || fail 'Could not check whether DS Bot has quit.'
+    if ! /usr/bin/awk -v paths="$paths" '
+      BEGIN { count = split(paths, bundles, "\n") }
+      { for (i = 1; i <= count; i++) if (index($0, bundles[i] "/Contents/") == 1) running = 1 }
+      END { exit !running }
+    ' <<< "$processes"; then return; fi
+    if ((i < 30)); then sleep 1; fi
+  done
+  fail 'DS Bot has not quit; no replacement or launch was attempted.'
+}
+
 verify_install_target
+if [[ $mode == restart ]]; then
+  paths=$(quit_app "$backups")
+  wait_for_quit "$paths"
+  /usr/bin/open "$installed"
+  exit
+fi
+
+arch=x64
+if [[ $(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || true) == 1 ]]; then arch=arm64; fi
+[[ $(node -p 'process.versions.node.split(".")[0]+":"+process.arch') == "24:$arch" ]] || fail "Put native Node.js 24 ($arch) first on PATH, as in release CI."
+
 [[ -w /Applications ]] || fail 'Cannot write to /Applications.'
 
 unset ELECTRON_RUN_AS_NODE
@@ -41,25 +88,9 @@ trap cleanup EXIT
 /usr/bin/codesign --verify --deep --strict "$stage/DS Bot.app"
 verify_install_target
 
-# Ask the installed copy to quit, never a test instance or a backup copy.
-/usr/bin/osascript -l JavaScript <<'JXA'
-ObjC.import('AppKit')
-const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier('io.github.fei2411.dsbot')
-for (let i = 0; i < apps.count; i++) {
-  const app = apps.objectAtIndex(i)
-  if (ObjC.unwrap(app.bundleURL.path) === '/Applications/DS Bot.app' && !app.terminate) {
-    throw Error('DS Bot declined to quit')
-  }
-}
-JXA
-running() { /usr/bin/pgrep -f '^/Applications/DS Bot\.app/Contents/' >/dev/null; }
-for ((i=0; i<30; i++)); do
-  if ! running; then break; fi
-  sleep 1
-done
-if running; then fail 'DS Bot has not quit; the installed app was not replaced.'; fi
+paths=$(quit_app)
+wait_for_quit "$paths"
 
-backups="$HOME/Library/Application Support/DS Bot App Backups"
 mkdir -p "$backups"
 backup=$(mktemp -d "$backups/reload.XXXXXXXX")
 /bin/mv "$installed" "$backup/DS Bot.app"
