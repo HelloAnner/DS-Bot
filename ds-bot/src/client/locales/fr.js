@@ -1,6 +1,15 @@
 // French (fr) localization for DS Bot client and DSH settings namespaces.
 
 export const FR = {
+  'Keyboard shortcuts': 'Raccourcis clavier',
+  'Bot navigation': 'Navigation entre les Bots',
+  'Select the Bot above': 'Sélectionner le Bot du dessus',
+  'Select the Bot below': 'Sélectionner le Bot du dessous',
+  'Press a key combination, or Esc to cancel.': 'Appuyez sur une combinaison de touches ou sur Échap pour annuler.',
+  'Recording…': 'Enregistrement…',
+  'Could not save shortcuts on this device.': 'Impossible d’enregistrer les raccourcis sur cet appareil.',
+  'Use a modifier with a letter, number, arrow, or function key.': 'Utilisez une touche de modification avec une lettre, un chiffre, une flèche ou une touche de fonction.',
+  'That shortcut is already assigned to the other direction.': 'Ce raccourci est déjà attribué à l’autre direction.',
   'Always on': 'Toujours actif',
   'In catalog': 'Dans le catalogue',
   'In catalog: the Bot loads this only when it needs it.': 'Dans le catalogue : le Bot le charge uniquement en cas de besoin.',

@@ -19,6 +19,7 @@ import { quietly } from './diagnostics.js'
 import { frameLayout, dragColumn, RAIL_WIDTH, FALLBACK_SIDEBAR_WIDTH, userSidebarToggle } from './frame-layout.js'
 import { chatRoom, dshCollapsed } from './frame-watch.js'
 import { useEscape } from './overlay-hooks.js'
+import { adjacentBot, readBotShortcuts, shortcutDirection } from './bot-shortcuts.js'
 
 // -------------------------------------------------------------------------
 // Sidebar
@@ -613,6 +614,33 @@ export function TeamSidebar(props) {
     [order, sectionSet],
   )
   const main = roster.byId[roster.mainBotId]
+  const activeBot = useSessions(list => {
+    const session = Object.values(list.byId).find(row => (row?.retainedBy?.mainView ?? 0) > 0)
+    return roster.byId[session?.id]?.id
+  })
+  const botNavigation = useRef(null)
+  botNavigation.current = (event) => {
+    if (event.defaultPrevented || document.querySelector('[aria-modal="true"], .bt-menu')) return
+    const target = event.target
+    if (target instanceof Element && (target.closest('.xterm') ||
+      (target.closest('input, textarea, select, [contenteditable]') && !target.closest('[data-composer-input]')))) return
+    const direction = shortcutDirection(event, readBotShortcuts())
+    if (direction === 0) return
+    const entries = [...ungrouped, ...sections.filter(section => !section.collapsed)
+      .flatMap(section => order.filter(entry => entry.item.sectionId === section.id))]
+    const ids = entries.filter(({ kind, item }) => kind === 'bot' && (!item.hidden || item.id === activeBot || isMainOf(roster, item.id)))
+      .map(({ item }) => item.id)
+    if (main) ids.unshift(main.id)
+    if (ids.length === 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.repeat) return
+    const next = adjacentBot(ids, activeBot, direction)
+    if (next !== undefined) {
+      actions.openSession(next)
+      if (leftDrawer) actions.setLeftDrawer?.(false)
+    }
+  }
   const glideKey = useMemo(
     () => `${sections.map(s => `${s.id}:${s.collapsed ? 1 : 0}`).join(',')}|${order.map(entry => `${entry.item.id}:${entry.item.sectionId ?? ''}`).join(',')}`,
     [sections, order],
@@ -852,7 +880,8 @@ export function TeamSidebar(props) {
   toggleRef.current = onToggle
   useEffect(() => {
     const onKey = (event) => {
-      if (event.defaultPrevented || event.isComposing || !pressesShellShortcut(event, 'sidebar.left.toggle')) return
+      if (event.defaultPrevented || event.isComposing) return
+      if (!pressesShellShortcut(event, 'sidebar.left.toggle')) { botNavigation.current(event); return }
       if (event.target instanceof Element && event.target.closest('.xterm')) return
       if (document.querySelector('[aria-modal="true"]')) return
       event.preventDefault()

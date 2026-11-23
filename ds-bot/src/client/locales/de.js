@@ -1,6 +1,15 @@
 // German (de) localization for DS Bot client and DSH settings namespaces.
 
 export const DE = {
+  'Keyboard shortcuts': 'Tastenkürzel',
+  'Bot navigation': 'Bot-Navigation',
+  'Select the Bot above': 'Bot darüber auswählen',
+  'Select the Bot below': 'Bot darunter auswählen',
+  'Press a key combination, or Esc to cancel.': 'Drücke eine Tastenkombination oder Esc zum Abbrechen.',
+  'Recording…': 'Wird aufgezeichnet…',
+  'Could not save shortcuts on this device.': 'Tastenkürzel konnten auf diesem Gerät nicht gespeichert werden.',
+  'Use a modifier with a letter, number, arrow, or function key.': 'Verwende eine Modifikatortaste zusammen mit einem Buchstaben, einer Ziffer, Pfeil- oder Funktionstaste.',
+  'That shortcut is already assigned to the other direction.': 'Dieses Tastenkürzel ist bereits der anderen Richtung zugewiesen.',
   'Always on': 'Immer aktiv',
   'In catalog': 'Im Katalog',
   'In catalog: the Bot loads this only when it needs it.': 'Im Katalog: Der Bot lädt dies nur bei Bedarf.',

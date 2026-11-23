@@ -133,7 +133,8 @@ export const CompassIcon = lineIcon(['M10 3.25a6.75 6.75 0 1 1 0 13.5 6.75 6.75 
 export const PaletteIcon = lineIcon(['M10 3.25a6.75 6.75 0 1 0 0 13.5h1.2a1.7 1.7 0 0 0 1.2-2.9 1.7 1.7 0 0 1 1.2-2.9h1.2a2.2 2.2 0 0 0 2.1-2.5A6.75 6.75 0 0 0 10 3.25z', 'M7.1 8.6h.01M9.5 6.6h.01M12.7 7.6h.01'])
 // Puzzle piece: built-in plugins fallback (distinct from model sliders).
 export const PuzzleIcon = lineIcon(['M8 3.5a1.5 1.5 0 0 1 3 0v1.25h3.5a1 1 0 0 1 1 1v3.5h1.25a1.5 1.5 0 0 1 0 3H15.5v3.25a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1H8z'])
-export const SETTINGS_ICONS = { guide: CompassIcon, general: GearIcon, appearance: PaletteIcon, bots: PeopleIcon, groups: ChatsIcon, im: SendIcon, usage: GaugeIcon }
+const KeyboardIcon = lineIcon(['M3 5h14v10H3z', 'M6 8h.01M9 8h.01M12 8h.01M15 8h.01M6 11h.01M9 11h6'])
+export const SETTINGS_ICONS = { shortcuts: KeyboardIcon, guide: CompassIcon, general: GearIcon, appearance: PaletteIcon, bots: PeopleIcon, groups: ChatsIcon, im: SendIcon, usage: GaugeIcon }
 export function OverviewIcon() {
   return h('svg', { width: 16, height: 16, viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true },
     h('rect', { x: 3, y: 3, width: 6, height: 6, rx: 1.8 }), h('rect', { x: 11, y: 3, width: 6, height: 6, rx: 1.8 }),

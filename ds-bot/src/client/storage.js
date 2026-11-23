@@ -6,6 +6,7 @@ export const STORAGE = {
   reactions: 'ds-bot:reactions',
   seen: 'ds-bot:seen',
   prefs: 'ds-bot:prefs',
+  botShortcuts: 'ds-bot:bot-shortcuts',
   surface: 'ds-bot:surface',
   agentSessions: 'ds-bot:agent-sessions',
   agentForks: 'ds-bot:pending-agent-forks',

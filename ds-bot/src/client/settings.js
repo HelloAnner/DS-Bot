@@ -36,6 +36,7 @@ import { t } from './i18n.js'
 import { PREFERENCE_ITEMS, SettingsPreferences } from './settings-preferences.js'
 import { SettingsPalette, isMac } from './settings-palette.js'
 import { OverviewPage } from './settings-overview.js'
+import { ShortcutsPage } from './shortcuts-page.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
@@ -75,6 +76,7 @@ const NAV_GROUPS = [
     section: 'main',
   },
   { id: 'usage', label: 'Usage', icon: 'usage', pages: [['usage', 'Usage']], section: 'main' },
+  { id: 'shortcuts', label: 'Keyboard shortcuts', icon: 'shortcuts', pages: [['shortcuts', 'Keyboard shortcuts']], section: 'main' },
   {
     id: 'about',
     label: 'About DS Bot',
@@ -523,6 +525,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
     if (leaving || typeof window === 'undefined') return undefined
     const mac = isMac()
     const onKeyDown = (event) => {
+      if (event.target?.closest?.('[data-recording-shortcut]')) return
       const modifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
       if (!modifier || event.altKey || event.shiftKey || (event.code !== 'KeyK' && String(event.key).toLowerCase() !== 'k')) return
       event.preventDefault()
@@ -769,6 +772,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
       case 'schedules': return h(SchedulesPage, { key: request('schedules')?.key ?? 'schedules', roster, actions, start: request('schedules')?.id })
       case 'connectors': return h(ConnectorsPage, { roster, actions })
       case 'im': return h(ImPage, { roster, actions })
+      case 'shortcuts': return h(ShortcutsPage, { Section: SetSection, Row: SetRow })
       case 'phone': return h(PhonePage, { roster, actions, Section: SetSection, Row: SetRow })
       case 'mcp': return h(McpPage, { roster, actions, Section: SetSection, Row: SetRow })
       case 'computer': return h(ComputerPage, { roster, actions, run, Section: SetSection, Row: SetRow, Switch })

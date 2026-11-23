@@ -1,6 +1,15 @@
 // Spanish (es) localization for DS Bot client and DSH settings namespaces.
 
 export const ES = {
+  'Keyboard shortcuts': 'Atajos de teclado',
+  'Bot navigation': 'Navegación entre Bots',
+  'Select the Bot above': 'Seleccionar el Bot de arriba',
+  'Select the Bot below': 'Seleccionar el Bot de abajo',
+  'Press a key combination, or Esc to cancel.': 'Pulsa una combinación de teclas o Esc para cancelar.',
+  'Recording…': 'Grabando…',
+  'Could not save shortcuts on this device.': 'No se pudieron guardar los atajos en este dispositivo.',
+  'Use a modifier with a letter, number, arrow, or function key.': 'Usa una tecla modificadora con una letra, un número, una flecha o una tecla de función.',
+  'That shortcut is already assigned to the other direction.': 'Ese atajo ya está asignado a la otra dirección.',
   'Always on': 'Siempre activo',
   'In catalog': 'En el catálogo',
   'In catalog: the Bot loads this only when it needs it.': 'En el catálogo: el Bot solo lo carga cuando lo necesita.',

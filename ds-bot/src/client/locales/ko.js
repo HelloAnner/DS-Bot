@@ -1,6 +1,15 @@
 // Korean (ko) localization for DS Bot client and DSH settings namespaces.
 
 export const KO = {
+  'Keyboard shortcuts': '키보드 단축키',
+  'Bot navigation': 'Bot 전환',
+  'Select the Bot above': '위쪽 Bot 선택',
+  'Select the Bot below': '아래쪽 Bot 선택',
+  'Press a key combination, or Esc to cancel.': '키 조합을 누르세요. Esc로 취소할 수 있습니다.',
+  'Recording…': '기록 중…',
+  'Could not save shortcuts on this device.': '이 기기에 단축키를 저장하지 못했습니다.',
+  'Use a modifier with a letter, number, arrow, or function key.': '보조 키와 문자, 숫자, 화살표 또는 기능 키를 함께 누르세요.',
+  'That shortcut is already assigned to the other direction.': '이 단축키는 이미 반대 방향에 할당되어 있습니다.',
   'Always on': '항상 켜짐',
   'In catalog': '카탈로그에 포함',
   'In catalog: the Bot loads this only when it needs it.': '카탈로그에 포함: Bot이 필요할 때만 로드합니다.',

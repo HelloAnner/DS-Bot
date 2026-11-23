@@ -43,6 +43,12 @@ dev/bench.sh smoke 3096 8796 stop
 
 A change is done when `npm test`, the `--check` and `npm run lint` pass; CI runs them for changes affecting `ds-bot/` (and always on `dev`/`main`). Run the smoke test as well for changes to `index.js` or `src/host/`, and `npm run test:browser` for changes to `src/host/browser/` (it drives a real Chromium; install it once with `npx playwright-core install --only-shell chromium`). Use a free port for each bench, and stop every bench and process that you started.
 
+## Fork `feature` workflow
+
+- Keep the fork's `main` aligned with upstream `main`. Develop fork-only features and fixes on `feature`; do not merge them into `main`. The upstream branch and PR rules below apply only to upstream contributions.
+- On `feature`, after each feature or fix, run the relevant checks without launching a separate desktop app. Then run `make reload` from the repository root, commit only the intended changes (including generated files), and push with `git push origin feature`. Never force-push. If a check or reload fails, report it rather than treating the work as complete.
+- `make reload` requires native Node.js 24 on macOS. It rebuilds the plugin and desktop release, validates the replacement, quits the installed copy gracefully, backs it up, and replaces `/Applications/DS Bot.app`. It does not touch chat or workspace data, launch a test app, or open the replacement. Leave restarting DS Bot to the user.
+
 ## Branches, pull requests and issues
 
 The full workflow is in [CONTRIBUTING.md](CONTRIBUTING.md#how-we-work). The parts that an agent must follow:

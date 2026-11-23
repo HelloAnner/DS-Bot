@@ -1,6 +1,15 @@
 // Japanese (ja) localization for DS Bot client and DSH settings namespaces.
 
 export const JA = {
+  'Keyboard shortcuts': 'キーボードショートカット',
+  'Bot navigation': 'Bot の切り替え',
+  'Select the Bot above': '上の Bot を選択',
+  'Select the Bot below': '下の Bot を選択',
+  'Press a key combination, or Esc to cancel.': 'キーの組み合わせを押してください。Esc でキャンセルできます。',
+  'Recording…': '記録中…',
+  'Could not save shortcuts on this device.': 'このデバイスにショートカットを保存できませんでした。',
+  'Use a modifier with a letter, number, arrow, or function key.': '修飾キーと文字、数字、矢印、またはファンクションキーを組み合わせてください。',
+  'That shortcut is already assigned to the other direction.': 'そのショートカットは反対方向に割り当てられています。',
   'Always on': '常時有効',
   'In catalog': 'カタログ内',
   'In catalog: the Bot loads this only when it needs it.': 'カタログ内：Bot が必要なときにのみ読み込みます。',
