@@ -47,7 +47,8 @@ A change is done when `npm test`, the `--check` and `npm run lint` pass; CI runs
 
 - Keep the fork's `main` aligned with upstream `main`. Develop fork-only features and fixes on `feature`; do not merge them into `main`. The upstream branch and PR rules below apply only to upstream contributions.
 - On `feature`, after each feature or fix, run the relevant checks without launching a separate desktop app. Then run `make restart` from the repository root, commit only the intended changes (including generated files), and push with `git push origin feature`. Never force-push. If a check or restart fails, report it rather than treating the work as complete.
-- `make restart` requires native Node.js 24 on macOS. It builds and verifies the replacement while the installed app keeps running, then quits the old instance gracefully, backs it up, installs the replacement, opens it, and checks the Host. If the old app was serving LAN chat, the new app restores the listener with fresh credentials. If startup fails, the command attempts to restore and reopen the old app. It does not launch a separate test instance or change chat or workspace data.
+- On macOS, `make start` installs and starts the headless server. `make restart` also rebuilds and refreshes the packed plugin. Both copy the authenticated browser URL after startup. Use `make copy-url` to copy it again. These targets require native Node.js 24 or later.
+- `make restart-app` is the legacy desktop replacement target. It requires native Node.js 24 and attempts to restore the previous app if startup fails. Use it instead of `make restart` when verifying a desktop-only change.
 
 ## Branches, pull requests and issues
 
