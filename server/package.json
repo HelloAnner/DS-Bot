@@ -1,0 +1,29 @@
+{
+  "name": "ds-bot-server",
+  "version": "0.3.10",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "bin": { "ds-bot-server": "./index.mjs" },
+  "scripts": { "start": "node index.mjs start", "test": "node --test test/*.test.js" },
+  "dependencies": {
+    "@deepseek-ai/cordis-plugin-include": "1.1.0",
+    "@deepseek-ai/dsh": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-app-boot": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-base": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-experimental-voice-input-bundle": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web-app": "0.2.2-rc.1",
+    "ds-bot": "file:../ds-bot",
+    "js-yaml": "4.3.2"
+  },
+  "optionalDependencies": {
+    "@deepseek-ai/dsh-host-directory-picker-browse": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-experimental-cua-macos": "0.2.2-rc.1"
+  },
+  "overrides": {
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-web": "0.2.2-rc.1"
+  }
+}
