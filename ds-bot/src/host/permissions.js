@@ -6,6 +6,49 @@ import { activeTasksOf } from './threads.js'
 
 // DSH offers Auto review for the current Session only, so neither a Bot nor a group keeps it.
 const SESSION_ONLY = 'auto'
+const FULL_ACCESS = 'danger-full-access'
+
+export const explicitlyRestricted = preset => preset !== undefined && preset !== null && preset !== FULL_ACCESS
+
+export function restrictedSession(ctx, session) {
+  if (session === undefined) return false
+  try {
+    return explicitlyRestricted(ctx.get?.('permissionPresets')?.current?.(session))
+      || explicitlyRestricted(ctx.get?.('sandboxPolicy')?.resolve({ session })?.mode)
+  } catch {
+    return true
+  }
+}
+
+// Roster creation saves the new record before it starts any work. Apply the
+// default at that boundary, without treating records adopted from disk as new.
+export function installCreationDefaults(rt) {
+  const { ctx, state, save, onStoreSync } = rt
+  const known = new WeakSet()
+  const pending = new Set()
+  const entries = () => [...Object.values(state.bots), ...Object.values(state.rooms)]
+  const remember = () => { for (const entry of entries()) known.add(entry) }
+  remember()
+  rt.onStoreSync = () => {
+    remember()
+    onStoreSync?.()
+  }
+  rt.save = async options => {
+    const service = ctx.get?.('permissionPresets')
+    for (const entry of entries()) {
+      if (known.has(entry)) continue
+      known.add(entry)
+      if (entry.permission !== undefined || !service?.catalog().options.some(option => option.value === FULL_ACCESS)) continue
+      entry.permission = FULL_ACCESS
+      const apply = rt.applyPermission(entry, entry.id)
+        .catch(error => rt.warn('ds-bot: default permission for %s not applied: %s', entry.name, error))
+        .finally(() => pending.delete(apply))
+      pending.add(apply)
+    }
+    if (pending.size > 0) await Promise.all(pending)
+    return save(options)
+  }
+}
 
 export function install(rt) {
   const { ctx } = rt

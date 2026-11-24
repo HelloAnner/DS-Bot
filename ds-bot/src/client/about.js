@@ -8,6 +8,7 @@ import { CompassIcon, StarLineIcon } from './icons.js'
 import { SPRING_POP } from './motion.js'
 import { BotMark } from './mark.js'
 import { MAIN_LOOK } from './characters.js'
+import { call } from './api.js'
 import { showsDshRow } from './dsh-offer.js'
 
 // The length of the mark's `done` hop (bt-done in styles.js).
@@ -58,7 +59,34 @@ function dshHint(dsh, shown) {
 
 const linkProps = href => ({ className: 'bt-soft bt-soft-sm bt-about-link', href, target: '_blank', rel: 'noopener noreferrer' })
 
-export function AboutPage({ useUpdate, actions, run, Section, Row, onStartTour = null }) {
+export function ServerAbout({ server, version, run, Section, Row }) {
+  const [info, setInfo] = useState(null)
+  const [restarting, setRestarting] = useState(false)
+  useEffect(() => {
+    const request = new AbortController()
+    void call('server-info', null, request.signal).then(setInfo, () => {})
+    return () => request.abort()
+  }, [server.startedAt])
+  const restart = async () => {
+    setRestarting(true)
+    if (!await run(call('server-restart').then((reply) => {
+      if (!reply?.restarting) throw new Error(t('The server did not restart.'))
+    }))) setRestarting(false)
+  }
+  const details = { ...server, ...info }
+  return h(Section, { title: t('Server') },
+    h(Row, { label: t('Server version'), hint: details.version ?? version ?? t('Unknown') }),
+    h(Row, { label: t('Hostname'), hint: details.hostname ?? t('Unknown') }),
+    h(Row, { label: t('Platform'), hint: details.platform ?? t('Unknown') }),
+    h(Row, { label: t('Data location'), hint: details.dshHome ?? t('Unknown') }),
+    h(Row, { label: t('Unrestricted mode'), hint: details.unrestricted === undefined ? t('Unknown') : t(details.unrestricted ? 'Enabled' : 'Disabled') }),
+    h(Row, { label: t('Server restart'), hint: t(details.canRestart ? 'Managed by a supervisor.' : 'No supervisor is configured. Restart the server from its host.') },
+      details.canRestart ? h('button', {
+        type: 'button', className: 'bt-soft bt-soft-sm', disabled: restarting, onClick: restart,
+      }, t(restarting ? 'Restarting server…' : 'Restart server')) : null))
+}
+
+export function AboutPage({ useUpdate, actions, run, Section, Row, server, onStartTour = null }) {
   const update = useUpdate(value => value) ?? {}
   const [checking, setChecking] = useState(false)
   const [stars, setStars] = useState(null)
@@ -121,6 +149,7 @@ export function AboutPage({ useUpdate, actions, run, Section, Row, onStartTour =
       h('span', { className: 'bt-star-main' }, h('span', { className: 'bt-star-icon' }, h(StarLineIcon)), 'Star'),
       stars === null ? null : h('span', { className: 'bt-star-count' }, starCount(stars))) : null),
     repo ? h('p', { key: 'ask', className: 'bt-about-ask' }, t('If DS Bot helps you, a star on GitHub helps more people find it.')) : null,
+    server?.enabled === true ? h(ServerAbout, { key: server.startedAt ?? 'server', server, version: update.current, run, Section, Row }) : null,
     h(Section, { key: 'updates', title: t('Updates') },
       h(Row, { label: 'DS Bot', hint: ownRow?.hint ?? botHint(update) }, botControl, update.available && update.notesUrl ? h('a', linkProps(update.notesUrl), t("What's new")) : null),
       dsh?.current ? h(Row, { label: 'DeepSeek Harness', hint: dshHint(dsh, dshShown) }, dshControl) : null),

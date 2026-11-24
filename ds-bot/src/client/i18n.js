@@ -11,6 +11,35 @@ import { DSH_DE, HOST_ERRORS_DE, DE } from './locales/de.js'
 export const NAMESPACE = 'ds-bot'
 
 const ZH = {
+  // Headless server
+  "Browser notifications require HTTPS or localhost.": "浏览器通知需要 HTTPS 或 localhost。",
+  "Hostname": "主机名",
+  "Platform": "平台",
+  "Unrestricted mode": "不受限模式",
+  "Server restart": "服务器重启",
+  "Managed by a supervisor.": "由守护进程管理。",
+  "No supervisor is configured. Restart the server from its host.": "未配置守护进程。请在服务器主机上重启。",
+  'Browser notifications are allowed.': '已允许浏览器通知。',
+  'Browser notifications are blocked. Change the permission in your browser.': '浏览器通知已被阻止。请在浏览器中更改权限。',
+  'Browser notifications need permission.': '浏览器通知需要授权。',
+  'Browser notifications are unavailable here.': '此处无法使用浏览器通知。',
+  'Enable browser notifications': '开启浏览器通知',
+  'Server version': '服务器版本',
+  'Restart server': '重启服务器',
+  'Restarting server…': '正在重启服务器…',
+  'The server did not restart.': '服务器未重启。',
+  'Remote browser viewport': '远程浏览器画面',
+  'Press Shift+Escape to leave the remote browser.': '按 Shift+Escape 离开远程浏览器。',
+  Preview: '预览',
+  'Live browser view': '实时浏览器画面',
+  'Waiting for browser preview…': '正在等待浏览器画面…',
+  'Could not load the browser preview. Retrying…': '无法加载浏览器画面。正在重试…',
+  '{name} · Computer use': '{name} · 电脑使用',
+  'Let go': '放开',
+  'Waiting for a screenshot…': '正在等待截图…',
+  'Loading screenshot…': '正在加载截图…',
+  'Could not load the screenshot.': '无法加载截图。',
+
   // Shared
   'Main Bot': '主 Bot',
   Working: '进行中',
@@ -2136,14 +2165,46 @@ export const LANGUAGES = [
   { id: 'de', label: 'Deutsch', fallback: 'en' },
 ]
 
+// Server UI copy lives here with the server client changes.
+const SERVER_COPY = [
+  ["Browser notifications require HTTPS or localhost.", "ブラウザー通知には HTTPS または localhost が必要です。", "브라우저 알림에는 HTTPS 또는 localhost가 필요합니다.", "Las notificaciones del navegador requieren HTTPS o localhost.", "Les notifications du navigateur nécessitent HTTPS ou localhost.", "Browser-Benachrichtigungen erfordern HTTPS oder localhost."],
+  ["Hostname", "ホスト名", "호스트 이름", "Nombre del host", "Nom d’hôte", "Hostname"],
+  ["Platform", "プラットフォーム", "플랫폼", "Plataforma", "Plateforme", "Plattform"],
+  ["Unrestricted mode", "無制限モード", "제한 없음 모드", "Modo sin restricciones", "Mode sans restriction", "Uneingeschränkter Modus"],
+  ["Server restart", "サーバーの再起動", "서버 다시 시작", "Reinicio del servidor", "Redémarrage du serveur", "Serverneustart"],
+  ["Managed by a supervisor.", "監視プロセスが管理しています。", "감독 프로세스가 관리합니다.", "Gestionado por un supervisor.", "Géré par un superviseur.", "Wird von einem Supervisor verwaltet."],
+  ["No supervisor is configured. Restart the server from its host.", "監視プロセスが設定されていません。ホスト上でサーバーを再起動してください。", "감독 프로세스가 구성되지 않았습니다. 호스트에서 서버를 다시 시작하세요.", "No hay un supervisor configurado. Reinicia el servidor desde su host.", "Aucun superviseur n’est configuré. Redémarrez le serveur depuis son hôte.", "Kein Supervisor konfiguriert. Starte den Server auf seinem Host neu."],
+  ["Browser notifications are allowed.", "ブラウザー通知は許可されています。", "브라우저 알림이 허용되었습니다.", "Las notificaciones del navegador están permitidas.", "Les notifications du navigateur sont autorisées.", "Browser-Benachrichtigungen sind erlaubt."],
+  ["Browser notifications are blocked. Change the permission in your browser.", "ブラウザー通知はブロックされています。ブラウザーで権限を変更してください。", "브라우저 알림이 차단되었습니다. 브라우저에서 권한을 변경하세요.", "Las notificaciones están bloqueadas. Cambia el permiso en el navegador.", "Les notifications sont bloquées. Modifiez l’autorisation dans votre navigateur.", "Browser-Benachrichtigungen sind blockiert. Ändere die Berechtigung im Browser."],
+  ["Browser notifications need permission.", "ブラウザー通知には許可が必要です。", "브라우저 알림에는 권한이 필요합니다.", "Las notificaciones del navegador necesitan permiso.", "Les notifications du navigateur nécessitent une autorisation.", "Browser-Benachrichtigungen benötigen eine Berechtigung."],
+  ["Browser notifications are unavailable here.", "ここではブラウザー通知を利用できません。", "여기서는 브라우저 알림을 사용할 수 없습니다.", "Las notificaciones del navegador no están disponibles aquí.", "Les notifications du navigateur ne sont pas disponibles ici.", "Browser-Benachrichtigungen sind hier nicht verfügbar."],
+  ["Enable browser notifications", "ブラウザー通知を有効にする", "브라우저 알림 켜기", "Activar las notificaciones del navegador", "Activer les notifications du navigateur", "Browser-Benachrichtigungen aktivieren"],
+  ["Server version", "サーバーのバージョン", "서버 버전", "Versión del servidor", "Version du serveur", "Serverversion"],
+  ["Restart server", "サーバーを再起動", "서버 다시 시작", "Reiniciar el servidor", "Redémarrer le serveur", "Server neu starten"],
+  ["Restarting server…", "サーバーを再起動中…", "서버를 다시 시작하는 중…", "Reiniciando el servidor…", "Redémarrage du serveur…", "Server wird neu gestartet…"],
+  ["The server did not restart.", "サーバーを再起動できませんでした。", "서버가 다시 시작되지 않았습니다.", "El servidor no se reinició.", "Le serveur n’a pas redémarré.", "Der Server wurde nicht neu gestartet."],
+  ["Remote browser viewport", "リモートブラウザーの表示領域", "원격 브라우저 화면", "Vista del navegador remoto", "Zone d’affichage du navigateur distant", "Ansicht des entfernten Browsers"],
+  ["Press Shift+Escape to leave the remote browser.", "Shift+Esc でリモートブラウザーから移動します。", "Shift+Esc를 눌러 원격 브라우저에서 나가세요.", "Pulsa Mayús+Esc para salir del navegador remoto.", "Appuyez sur Maj+Échap pour quitter le navigateur distant.", "Mit Umschalt+Esc verlässt du den entfernten Browser."],
+  ["Preview", "プレビュー", "미리보기", "Vista previa", "Aperçu", "Vorschau"],
+  ["Live browser view", "ブラウザーのライブ映像", "실시간 브라우저 화면", "Vista en directo del navegador", "Vue en direct du navigateur", "Live-Ansicht des Browsers"],
+  ["Waiting for browser preview…", "ブラウザーのプレビューを待機中…", "브라우저 미리보기를 기다리는 중…", "Esperando la vista previa del navegador…", "En attente de l’aperçu du navigateur…", "Warte auf die Browser-Vorschau…"],
+  ["Could not load the browser preview. Retrying…", "プレビューを読み込めませんでした。再試行中…", "브라우저 미리보기를 불러오지 못했습니다. 다시 시도하는 중…", "No se pudo cargar la vista previa del navegador. Reintentando…", "Impossible de charger l’aperçu du navigateur. Nouvelle tentative…", "Browser-Vorschau konnte nicht geladen werden. Erneuter Versuch…"],
+  ["{name} · Computer use", "{name} · コンピューター操作", "{name} · 컴퓨터 사용", "{name} · Uso del equipo", "{name} · Utilisation de l’ordinateur", "{name} · Computernutzung"],
+  ["Let go", "手放す", "제어 놓기", "Ceder el control", "Céder le contrôle", "Kontrolle abgeben"],
+  ["Waiting for a screenshot…", "スクリーンショットを待機中…", "스크린샷을 기다리는 중…", "Esperando una captura de pantalla…", "En attente d’une capture d’écran…", "Warte auf einen Screenshot…"],
+  ["Loading screenshot…", "スクリーンショットを読み込み中…", "스크린샷을 불러오는 중…", "Cargando la captura de pantalla…", "Chargement de la capture d’écran…", "Screenshot wird geladen…"],
+  ["Could not load the screenshot.", "スクリーンショットを読み込めませんでした。", "스크린샷을 불러오지 못했습니다.", "No se pudo cargar la captura de pantalla.", "Impossible de charger la capture d’écran.", "Screenshot konnte nicht geladen werden."],
+]
+const withServerCopy = (copy, index) => ({ ...copy, ...Object.fromEntries(SERVER_COPY.map(row => [row[0], row[index]])) })
+
 export const DICTIONARY = {
   zh: ZH,
   'zh-TW': ZH_TW,
-  ja: JA,
-  ko: KO,
-  es: ES,
-  fr: FR,
-  de: DE,
+  ja: withServerCopy(JA, 1),
+  ko: withServerCopy(KO, 2),
+  es: withServerCopy(ES, 3),
+  fr: withServerCopy(FR, 4),
+  de: withServerCopy(DE, 5),
 }
 
 const HOST_ERROR_TABLE = {

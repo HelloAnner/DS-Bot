@@ -138,6 +138,10 @@ export function mountBrowserPlugin(ctx, { toolDefs, defineTool, keyOf, profileRo
         if (disposed) throw new Error('The browser plugin is closed.')
         if (getHold?.(botId)?.by === 'user') throw new Error('The user has taken over this browser. Wait for them to give it back.')
         let session = sessions.get(botId)
+        if (session !== undefined && (await session).closed === true && sessions.get(botId) === session) {
+          sessions.delete(botId)
+          session = undefined
+        } else if (session !== undefined) session = sessions.get(botId)
         if (spec.needsBrowser && session === undefined) {
           // Store the opening promise before resolving roots so concurrent calls share the launch.
           const opening = Promise.resolve().then(async () => {

@@ -7,6 +7,7 @@
 // it, and the others stay at the same size (their layout, and so what a read sees,
 // stays the same) but hidden.
 
+import { call } from './api.js'
 import { READ_PAGE_SCRIPT } from './read-page.js'
 import { setEntry, sharedMap } from './shared-map.js'
 import { STORAGE } from './storage.js'
@@ -647,5 +648,213 @@ export function serveBrowserReads({ browsers, post, clientId = globalThis.crypto
     stopped = true
     offPages()
     poll?.abort()
+  }
+}
+
+export function browserControlActions(bridge, serverBrowsers, roster, refresh = () => {}) {
+  const getServer = () => roster.getSnapshot().browserMode === 'server' && serverBrowsers ? serverBrowsers : null
+  const available = () => Boolean(bridge?.views || getServer())
+  const control = async (endpoint, botId, held, answer) => {
+    const server = getServer()
+    if (!server && !bridge?.views) return
+    const result = await call(endpoint, { botId, ...answer })
+    if (server) {
+      server.updateHold(botId, held, endpoint === 'browser-stop' ? 'stopped' : 'takeover')
+      refresh()
+      if (held) await server.ensureTabs(botId, true)
+    } else await bridge?.views?.hold?.(botId, held)
+    return result
+  }
+  const takeover = botId => control('browser-takeover', botId, true)
+  const stop = botId => control('browser-stop', botId, true)
+  // A handoff card sends { callId, outcome }; the panel's Give back sends neither.
+  const giveBack = (botId, answer) => control('browser-give-back', botId, false, answer)
+  return {
+    get browserTakeover() { return available() ? takeover : undefined },
+    get browserStop() { return available() ? stop : undefined },
+    get browserGiveBack() { return available() ? giveBack : undefined },
+  }
+}
+
+export function createServerViewProxy(call, botId, tabId) {
+  const post = (action, payload, signal) => call(`browser-tab-${action}`, { botId, tabId, ...payload }, signal)
+  return {
+    select: signal => post('select', undefined, signal),
+    navigate: url => post('nav', { url }),
+    command: command => post('cmd', { command }),
+    close: () => post('close'),
+    frame: (width, height, signal) => post('frame', { width, height }, signal),
+    input: event => post('input', event),
+  }
+}
+
+// The Host owns the tabs. The strip mirrors the selection and sends explicit tab changes.
+export function createServerBotBrowsers({ call, createSource, report }) {
+  const tabs = createSource({})
+  const pages = createSource({})
+  const holds = createSource({})
+  const views = new Map()
+  const frames = new Map()
+  const lists = new Map()
+  const opening = new Map()
+  const holdLists = new Map()
+  const owners = new Map()
+  const requests = new AbortController()
+  const publish = (tabId, patch) => pages.set(state => ({ ...state, [tabId]: { ...EMPTY, ...state[tabId], ...patch } }))
+  const forget = (tabId) => {
+    views.delete(tabId)
+    owners.delete(tabId)
+    frames.delete(tabId)
+    pages.set(state => { const { [tabId]: _, ...rest } = state; return rest })
+  }
+  const add = (botId, tab) => {
+    owners.set(tab.tabId, botId)
+    if (!views.has(tab.tabId)) views.set(tab.tabId, createServerViewProxy(call, botId, tab.tabId))
+    publish(tab.tabId, { ...tab, live: true, url: tab.url === 'about:blank' ? '' : tab.url })
+  }
+  const ensureTabs = (botId, followHold = false) => {
+    if (holdLists.has(botId)) return holdLists.get(botId)
+    if (!followHold && lists.has(botId)) return lists.get(botId)
+    const loading = call('browser-tab-list', { botId }, requests.signal).then((value) => {
+      if (requests.signal.aborted || lists.get(botId) !== loading) return
+      for (const tab of value.tabs) add(botId, tab)
+      const ids = value.tabs.map(tab => tab.tabId)
+      const previous = tabs.getSnapshot()[botId]
+      for (const id of previous?.ids ?? []) if (!ids.includes(id)) forget(id)
+      const preferred = (followHold || holds.getSnapshot()[botId]) ? [value.activeTabId, previous?.active] : [previous?.active, value.activeTabId]
+      const active = [...preferred, ids.at(-1)].find(id => ids.includes(id)) ?? null
+      tabs.set(state => ({ ...state, [botId]: { ids, active } }))
+    }).catch((error) => { if (!requests.signal.aborted) report(error) }).finally(() => {
+      if (lists.get(botId) === loading) lists.delete(botId)
+      if (holdLists.get(botId) === loading) holdLists.delete(botId)
+    })
+    lists.set(botId, loading)
+    if (followHold) holdLists.set(botId, loading)
+    return loading
+  }
+  const openTab = (botId, onlyIfEmpty = false) => {
+    if (opening.has(botId)) return opening.get(botId)
+    const pending = (async () => {
+      // Don't let an older list overwrite an open response or create a second blank tab.
+      if (lists.has(botId) || tabs.getSnapshot()[botId] === undefined) await ensureTabs(botId)
+      const current = tabs.getSnapshot()[botId]
+      if (requests.signal.aborted || current === undefined) return null
+      if (onlyIfEmpty && current.active !== null) return current.active
+      lists.delete(botId)
+      const tab = await call('browser-tab-open', { botId }, requests.signal)
+      if (requests.signal.aborted || tabs.getSnapshot()[botId] === undefined) return null
+      lists.delete(botId)
+      add(botId, tab)
+      tabs.set(state => ({ ...state, [botId]: { ids: [...state[botId].ids, tab.tabId], active: tab.tabId } }))
+      return tab.tabId
+    })().catch((error) => { if (!requests.signal.aborted) report(error); return null }).finally(() => opening.delete(botId))
+    opening.set(botId, pending)
+    return pending
+  }
+  const update = (tabId, view, tab) => {
+    if (views.get(tabId) !== view || requests.signal.aborted) return
+    const { image: _, width: _w, height: _h, updatedAt: _at, ...page } = tab
+    const url = page.url === 'about:blank' ? '' : page.url
+    const current = pages.getSnapshot()[tabId]
+    const patch = url === undefined ? page : { ...page, url }
+    if (Object.keys(patch).some(key => current?.[key] !== patch[key])) publish(tabId, patch)
+  }
+  const act = async (tabId, run) => {
+    const view = views.get(tabId)
+    if (!view) return false
+    try { update(tabId, view, await run(view)); return true }
+    catch (error) {
+      if (views.get(tabId) === view && !requests.signal.aborted) report(error)
+      return false
+    }
+  }
+  return {
+    tabs, pages, holds, ensureTabs, openTab,
+    setHolds(value) {
+      const previous = holds.getSnapshot()
+      const next = value && typeof value === 'object' ? value : {}
+      holds.set(next)
+      for (const [botId, hold] of Object.entries(next)) {
+        if (hold && (tabs.getSnapshot()[botId] || lists.has(botId)) && JSON.stringify(hold) !== JSON.stringify(previous[botId])) {
+          void ensureTabs(botId, true)
+        }
+      }
+    },
+    updateHold(botId, held, reason) {
+      holds.set((state) => {
+        const previous = state[botId]
+        const hold = held ? (reason === 'takeover' && previous?.callId !== undefined
+          ? { ...previous, by: 'user' }
+          : { by: 'user', reason }) : undefined
+        return setEntry(state, botId, hold)
+      })
+    },
+    async activate(botId, tabId) {
+      const own = tabs.getSnapshot()[botId]
+      const view = views.get(tabId)
+      if (!own?.ids.includes(tabId) || !view || requests.signal.aborted) return
+      tabs.set(state => ({ ...state, [botId]: { ...own, active: tabId } }))
+      try { await view.select(requests.signal) }
+      catch (error) { if (!requests.signal.aborted) report(error) }
+    },
+    async closeTab(botId, tabId) {
+      const view = views.get(tabId)
+      if (!view) return
+      try {
+        await view.close()
+        if (requests.signal.aborted) return
+        lists.delete(botId)
+        forget(tabId)
+        tabs.set((state) => {
+          const own = state[botId]
+          if (!own) return state
+          const ids = own.ids.filter(id => id !== tabId)
+          return { ...state, [botId]: { ids, active: own.active === tabId ? ids.at(-1) ?? null : own.active } }
+        })
+      } catch (error) { if (!requests.signal.aborted) report(error) }
+    },
+    navigate(tabId, input) {
+      const url = browserAddress(input)
+      if (url === null || blockedAddress(url)) {
+        publish(tabId, { error: url === null ? 'Only http and https addresses open here.' : BLOCKED })
+        return false
+      }
+      return act(tabId, view => view.navigate(url))
+    },
+    command: (tabId, command) => act(tabId, view => view.command(command)),
+    cachedFrame: tabId => frames.get(tabId) ?? null,
+    async frame(tabId, width, height, signal) {
+      const view = views.get(tabId)
+      // Don't fetch another frame for the old tab while resolving a handoff.
+      if (!view || requests.signal.aborted || holdLists.has(owners.get(tabId))) return null
+      const frame = await view.frame(width, height, signal)
+      if (views.get(tabId) !== view || requests.signal.aborted || !frame) return null
+      if (frame.image) {
+        frames.delete(tabId)
+        frames.set(tabId, frame)
+        if (frames.size > MAX_LIVE) frames.delete(frames.keys().next().value)
+      } else if (frame.updatedAt === null) frames.delete(tabId)
+      if (signal.aborted) return null
+      update(tabId, view, frame)
+      return frame
+    },
+    input: (tabId, event) => views.get(tabId)?.input(event),
+    show() {},
+    focus() {},
+    retain(botIds) {
+      const next = { ...tabs.getSnapshot() }
+      let changed = false
+      for (const id of new Set([...Object.keys(next), ...lists.keys()])) {
+        if (botIds.includes(id)) continue
+        lists.delete(id)
+        holdLists.delete(id)
+        if (!next[id]) continue
+        for (const tabId of next[id].ids) forget(tabId)
+        delete next[id]
+        changed = true
+      }
+      if (changed) tabs.set(next)
+    },
+    dispose() { requests.abort(); lists.clear(); holdLists.clear(); owners.clear(); views.clear(); frames.clear() },
   }
 }

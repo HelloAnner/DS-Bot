@@ -31,7 +31,7 @@ import { SaveFileAction } from './file-save.js'
 import { fileMentionSource } from './mention-source.js'
 import { FailureCell, TURN_ERROR_CSS } from './turn-error.js'
 import { Overlays } from './overlays.js'
-import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
+import { browserControlActions, createBotBrowsers, createServerBotBrowsers, serveBrowserReads } from './bot-browsers.js'
 import { BROWSER_CSS } from './browser-pane.js'
 import { SECRET_CSS, SecretDock } from './secret-card.js'
 import { ConnectorDock, MailDock, CONNECTOR_CSS } from './connectors.js'
@@ -197,10 +197,11 @@ export function apply(ctx) {
   // Pulls can overlap (the poll and a navigation); an older answer never wins.
   let pulls = 0
   let applied = 0
+  let nextHoldPull = 0
   const pull = async () => {
     const order = ++pulls
     const known = roster.getSnapshot()
-    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', live: liveKey, locale: language() })
+    const value = await call('state', { since: known.revision, models: known.modelsKey ?? '', live: nextHoldPull ? undefined : liveKey, locale: language() })
     if (order < applied) return
     applied = order
     const prevLiveKey = liveKey
@@ -216,6 +217,11 @@ export function apply(ctx) {
     if (value.computerLive !== undefined) {
       const nextComputer = JSON.stringify(value.computerLive)
       if (nextComputer !== computerKey) { computerKey = nextComputer; computer.set(value.computerLive) }
+    }
+    // An in-flight poll from before a control acknowledgement cannot undo it.
+    if (order >= nextHoldPull) {
+      nextHoldPull = 0
+      if (value.browserHolds !== undefined && (value.browserMode ?? known.browserMode) === 'server') serverBrowsers?.setHolds(value.browserHolds)
     }
     if (value.memoryNews !== undefined) noteMemoryNews(value.memoryNews)
     const current = roster.getSnapshot()
@@ -348,28 +354,47 @@ export function apply(ctx) {
     }, 'ds-bot: own app update state')
   }
 
-  // Bot browsers need a webview bridge: DSH Desktop's, or the desktop app's of the
-  // same shape. The host serves read_browser only in those two (`browser` in the state).
-  const bridge = (window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.browser : globalThis.dsBotApp?.browser) ?? null
-  const browsers = bridge ? createBotBrowsers({ bridge, createSource }) : null
+  const bridge = (globalThis.dsBotApp?.browser ?? (window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.browser : null)) ?? null
+  const nativeBrowsers = bridge ? createBotBrowsers({ bridge, createSource }) : null
+  const serverBrowsers = !globalThis.dsBotApp?.browser ? createServerBotBrowsers({
+    call, createSource, report: error => actions.reportError(error, 'server-browser'),
+  }) : null
+  const browsers = nativeBrowsers ?? serverBrowsers
+  const browserState = (snapshot) => snapshot.browserMode === 'server' && serverBrowsers ? serverBrowsers : nativeBrowsers
+  const browserPages = createSource({})
+  const browserTabs = createSource({})
+  const browserHolds = createSource({})
   if (browsers) {
     ctx.effect(() => {
       let stopReads = null
+      const syncSources = () => {
+        const active = browserState(roster.getSnapshot())
+        browserPages.set(active?.pages.getSnapshot() ?? {})
+        browserTabs.set(active?.tabs.getSnapshot() ?? {})
+        browserHolds.set(active?.holds.getSnapshot() ?? {})
+      }
+      let currentBrowsers
       const sync = () => {
         const snapshot = roster.getSnapshot()
         if (!snapshot.ready) return
-        const on = snapshot.browser === true
-        if (on && !stopReads) stopReads = serveBrowserReads({ browsers, post: call })
-        if (!on && stopReads) { stopReads(); stopReads = null }
+        const active = browserState(snapshot)
+        if (currentBrowsers !== active) { currentBrowsers = active; syncSources() }
+        const on = snapshot.browser === true && active !== null
+        const serveReads = on && active === nativeBrowsers && nativeBrowsers !== null
+        if (serveReads && !stopReads) stopReads = serveBrowserReads({ browsers: nativeBrowsers, post: call })
+        if (!serveReads && stopReads) { stopReads(); stopReads = null }
         // A Bot deleted here or in another window takes its guests and saved tabs along.
-        void browsers.retain(snapshot.bots.map(bot => bot.id))
+        void active?.retain(snapshot.bots.map(bot => bot.id))
         // A panel open on the browser view without a browsable subject falls back
         // to the details view.
         ui.set(state => (state.details && state.view === 'browser' && (!on || !snapshot.byId[state.details]) ? { ...state, view: 'details' } : state))
       }
       sync()
-      const offRoster = roster.subscribe(sync)
-      return () => { offRoster(); stopReads?.(); browsers.dispose() }
+      const offs = [roster.subscribe(sync), ...[nativeBrowsers, serverBrowsers].filter(Boolean)
+        .flatMap(manager => [manager.pages, manager.tabs, manager.holds].map(source => source.subscribe(() => {
+          if (manager === currentBrowsers) syncSources()
+        })))]
+      return () => { for (const off of offs) off(); stopReads?.(); nativeBrowsers?.dispose(); serverBrowsers?.dispose() }
     }, 'ds-bot: Bot browsers')
   }
 
@@ -755,60 +780,59 @@ export function apply(ctx) {
     },
     clearUnread: id => writeUnread(id, false),
   }
-  // Without the Desktop bridge these stay undefined, and no browser control renders.
+  // The roster picks the browser backend after the first state response.
   if (browsers) {
+    const current = () => browserState(roster.getSnapshot())
+    const showBrowser = id => ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null, panelYield: yieldBrowser(state) }))
+    const showServerTab = (id, onlyIfEmpty) => {
+      const before = ui.getSnapshot()
+      return serverBrowsers.openTab(id, onlyIfEmpty).then((tabId) => {
+        const afterOpen = ui.getSnapshot()
+        if (tabId && current() === serverBrowsers && before.details === afterOpen.details && before.view === afterOpen.view) showBrowser(id)
+        return tabId
+      })
+    }
     Object.assign(actions, {
       // The globe button: the Bot's active tab in the browser view, or a new tab.
       openBrowser: (id) => {
         const bot = roster.getSnapshot().byId[id]
-        if (!bot) return
-        browsers.ensureTabs(bot.id)
-        if (browsers.tabs.getSnapshot()[bot.id]?.active == null) browsers.openTab(bot.id)
-        ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null, panelYield: yieldBrowser(state) }))
+        if (!bot || !current()) return
+        if (current() === serverBrowsers) return showServerTab(id, true)
+        nativeBrowsers.ensureTabs(bot.id)
+        if (nativeBrowsers.tabs.getSnapshot()[bot.id]?.active == null) nativeBrowsers.openTab(bot.id)
+        showBrowser(id)
       },
       // '+' on the strip or the drawer's new-tab card: a blank tab in the browser view.
       browserNewTab: (id) => {
         const bot = roster.getSnapshot().byId[id]
-        if (!bot) return null
-        browsers.ensureTabs(bot.id)
-        const tabId = browsers.openTab(bot.id)
-        ui.set(state => ({ ...state, details: id, view: 'browser', renaming: false, tab: null, panelYield: yieldBrowser(state) }))
+        if (!bot || !current()) return null
+        if (current() === serverBrowsers) return showServerTab(id, false)
+        nativeBrowsers.ensureTabs(bot.id)
+        const tabId = nativeBrowsers.openTab(bot.id)
+        showBrowser(id)
         return tabId
       },
       // A drawer card: its tab active, the panel on the browser view.
       browserPick: (id, tabId) => {
         const bot = roster.getSnapshot().byId[id]
         if (!bot) return
-        browsers.activate(bot.id, tabId)
+        current()?.activate(bot.id, tabId)
         ui.set(state => ({ ...state, details: id, view: 'browser', panelYield: yieldBrowser(state) }))
       },
-      browserEnsure: botId => browsers.ensureTabs(botId),
-      browserCloseTab: (botId, tabId) => browsers.closeTab(botId, tabId),
-      browserActivate: (botId, tabId) => browsers.activate(botId, tabId),
-      browserShow: (tabId, box) => browsers.show(tabId, box),
-      browserNavigate: (tabId, input) => browsers.navigate(tabId, input),
-      browserCommand: (tabId, name) => browsers.command(tabId, name),
-      browserFocus: (tabId) => browsers.focus(tabId),
-      browserTakeover: bridge.views ? async botId => {
-        const result = await call('browser-takeover', { botId })
-        await bridge.views.hold(botId, true)
-        return result
-      } : undefined,
-      browserStop: bridge.views ? async botId => {
-        const result = await call('browser-stop', { botId })
-        await bridge.views.hold(botId, true)
-        return result
-      } : undefined,
-      // `answer` is a handoff card's { callId, outcome }; the panel's Give back sends none.
-      browserGiveBack: bridge.views ? async (botId, answer = {}) => {
-        const result = await call('browser-give-back', { botId, ...answer })
-        await bridge.views.hold(botId, false)
-        return result
-      } : undefined,
+      browserEnsure: botId => current()?.ensureTabs(botId),
+      browserCloseTab: (botId, tabId) => current()?.closeTab(botId, tabId),
+      browserActivate: (botId, tabId) => current()?.activate(botId, tabId),
+      browserShow: (tabId, box) => current()?.show(tabId, box),
+      browserNavigate: (tabId, input) => current()?.navigate(tabId, input),
+      browserCommand: (tabId, name) => current()?.command(tabId, name),
+      browserFocus: (tabId) => current()?.focus(tabId),
+      browserCachedFrame: tabId => serverBrowsers?.cachedFrame(tabId),
+      browserFrame: (tabId, width, height, signal) => serverBrowsers?.frame(tabId, width, height, signal),
+      browserInput: (tabId, event) => serverBrowsers?.input(tabId, event),
       // Cookie imports, only where the bridge offers them (the desktop app): an installed
       // browser profile, a file, or pasted cookies/cURL is previewed, then applied into
       // the Bot's storage key.
-      browserImport: typeof bridge.importSources === 'function' ? {
+      browserImport: typeof bridge?.importSources === 'function' ? {
         sources: () => bridge.importSources(),
         probe: typeof bridge.importProbe === 'function' ? (source) => bridge.importProbe(source) : null,
         pick: () => bridge.importPick(),
@@ -820,6 +844,12 @@ export function apply(ctx) {
       } : null,
     })
   }
+  // Evaluate capability when a slot reads these actions, after the roster has loaded.
+  const browserControls = browserControlActions(bridge, serverBrowsers, roster, () => {
+    nextHoldPull = pulls + 1
+    void pull().catch(() => {})
+  })
+  Object.defineProperties(actions, Object.getOwnPropertyDescriptors(browserControls))
   // Whether AccountLauncher holds the shell's settings seat; FooterAccount steps aside if so.
   actions.signInEntry = () => ctx.slots.entries?.('settings.models.sign-in')?.[0] ?? null
   actions.canSignIn = () => Boolean(actions.signInEntry())
@@ -887,9 +917,6 @@ export function apply(ctx) {
   actions.checkOwnApp = async () => { await ownAppUpdates?.check?.() }
   actions.installOwnApp = async () => { await ownAppUpdates?.install?.() }
   actions.openOwnApp = async () => { await ownAppUpdates?.open?.() }
-  const browserPages = browsers?.pages ?? createSource({})
-  const browserTabs = browsers?.tabs ?? createSource({})
-  const browserHolds = browsers?.holds ?? createSource({})
 
   // The desktop app carries the floating indicator and the tray entries, and reads the
   // OS idle time for the foreground gate; the entries and the pushes ride its bridge.
@@ -1275,7 +1302,7 @@ export function apply(ctx) {
     // The whale wins the seat over a shell account plugin's own launcher (the
     // Desktop's "··· More"), which comes back in Agent mode.
     () => shadow('settings.launcher', { priority: BOT_PRIORITY, inject: face }, AccountLauncher),
-    () => shadow('shell.overlay', { id: 'bot-computer', order: 40, inject: face }, ComputerIndicator),
+    () => shadow('shell.overlay', { id: 'bot-computer', order: 40, inject: () => ({ ...face(), browserTab: !appComputer }) }, ComputerIndicator),
     () => shadow('shell.overlay', { id: 'bot', order: 50, inject: face }, Overlays),
     () => shadow('shell.overlay', { id: 'bot-signin', order: 55, inject: face }, DeepSeekSignIn),
     () => shadow('shell.overlay', { id: 'bot-toast', order: 60, inject: face }, ErrorToast),

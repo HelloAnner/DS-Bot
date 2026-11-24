@@ -340,7 +340,146 @@ export function shouldCheckBrowserCover(records) {
 
 // The browser view: toolbar (back, forward, reload/stop, address) over the frame
 // the guest webview covers.
-export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPages, hold }) {
+export function serverFramePoint(box, frame, clientX, clientY) {
+  if (!box.width || !box.height || !frame?.width || !frame?.height) return null
+  const scale = Math.min(box.width / frame.width, box.height / frame.height)
+  const x = (clientX - box.left - (box.width - frame.width * scale) / 2) / scale
+  const y = (clientY - box.top - (box.height - frame.height * scale) / 2) / scale
+  return x >= 0 && y >= 0 && x < frame.width && y < frame.height ? { x, y } : null
+}
+
+export function ServerBrowserViewport({ tabId, actions, frameRef, visible = true }) {
+  const viewport = useRef(null)
+  const [shot, setShot] = useState(() => actions.browserCachedFrame?.(tabId))
+  const shotRef = useRef(shot)
+  const [failed, setFailed] = useState(false)
+  const image = useRef(null)
+  const keys = useRef(new Map())
+  const queued = useRef(Promise.resolve())
+  const moving = useRef(false)
+  const send = (event) => {
+    queued.current = queued.current.then(() => actions.browserInput(tabId, event)).catch((error) => {
+      actions.reportError?.(error, 'browser-tab-input')
+    })
+    return queued.current
+  }
+  const point = event => serverFramePoint(viewport.current.getBoundingClientRect(), image.current, event.clientX, event.clientY)
+  useEffect(() => {
+    const request = new AbortController()
+    let timer
+    const poll = async () => {
+      let delay = 250
+      try {
+        const box = (frameRef ?? viewport).current.getBoundingClientRect()
+        if (!document.hidden && box.width >= 1 && box.height >= 1) {
+          const width = Math.round(box.width)
+          const height = Math.round(box.height)
+          let frame = await actions.browserFrame(tabId, width, height, request.signal)
+          if (request.signal.aborted) return
+          // The Host may already have sent this unchanged image to another viewer.
+          // A one-pixel resize gives a new viewer a frame without a protocol extension.
+          if (frame && !frame.image && frame.updatedAt != null && !shotRef.current) {
+            const alternateWidth = frame.width >= 1920 ? frame.width - 1 : (frame.width ?? width) + 1
+            frame = await actions.browserFrame(tabId, alternateWidth, height, request.signal)
+            if (request.signal.aborted) return
+          }
+          if (frame?.image) { shotRef.current = frame; setShot(frame) }
+          else if (frame?.updatedAt === null && shotRef.current) {
+            shotRef.current = null
+            image.current = null
+            setShot(null)
+          }
+          setFailed(false)
+        }
+      } catch {
+        if (request.signal.aborted) return
+        setFailed(true)
+        delay = 1200
+      }
+      if (!request.signal.aborted) timer = setTimeout(poll, delay)
+    }
+    void poll()
+    return () => { request.abort(); clearTimeout(timer) }
+  }, [tabId, actions, frameRef])
+  useEffect(() => {
+    if (!visible) return undefined
+    const element = viewport.current
+    const wheel = (event) => {
+      const position = point(event)
+      if (!position) return
+      event.preventDefault()
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1
+      void send({ kind: 'wheel', ...position, deltaX: event.deltaX * unit, deltaY: event.deltaY * unit })
+    }
+    const release = () => {
+      for (const key of keys.current.values()) void send({ kind: 'keyup', key })
+      keys.current.clear()
+    }
+    element.addEventListener('wheel', wheel, { passive: false })
+    element.addEventListener('blur', release)
+    return () => { element.removeEventListener('wheel', wheel); element.removeEventListener('blur', release); release(); image.current = null }
+  }, [tabId, actions, visible])
+  if (!visible) return null
+  const click = (event) => {
+    event.preventDefault()
+    const position = point(event)
+    if (!position) return
+    event.currentTarget.focus()
+    void send({ kind: 'click', ...position, button: ['left', 'middle', 'right'][event.button] ?? 'left' })
+  }
+  return h('div', {
+    ref: viewport, className: 'bt-browser-remote', tabIndex: 0, 'aria-label': t('Remote browser viewport'),
+    'aria-description': t('Press Shift+Escape to leave the remote browser.'),
+    onClick: click, onAuxClick: event => { if (event.button === 1) click(event) }, onContextMenu: click,
+    onPointerMove: (event) => {
+      const position = point(event)
+      if (!position || moving.current) return
+      moving.current = true
+      void send({ kind: 'move', ...position }).finally(() => { moving.current = false })
+    },
+    onKeyDown: (event) => {
+      if (event.nativeEvent?.isComposing || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v')) return
+      // Leave a keyboard exit from the remote surface to the local address bar.
+      if (event.shiftKey && event.key === 'Escape') {
+        event.preventDefault()
+        event.currentTarget.closest('.bt-panel-browser')?.querySelector('.bt-browser-address input')?.focus()
+        return
+      }
+      if (Array.from(event.key).length === 1 && event.key.codePointAt(0) > 126 && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault()
+        event.stopPropagation()
+        void send({ kind: 'type', text: event.key })
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      const code = event.code || event.key
+      const key = keys.current.get(code) ?? event.key
+      keys.current.set(code, key)
+      void send({ kind: 'keydown', key })
+    },
+    onKeyUp: (event) => {
+      const code = event.code || event.key
+      const key = keys.current.get(code)
+      if (!keys.current.delete(code)) return
+      event.preventDefault()
+      event.stopPropagation()
+      void send({ kind: 'keyup', key })
+    },
+    onCompositionEnd: (event) => { if (event.data) void send({ kind: 'type', text: event.data }) },
+    onPaste: (event) => {
+      event.preventDefault()
+      const text = event.clipboardData.getData('text/plain')
+      if (text) void send({ kind: 'type', text })
+    },
+  }, shot ? h('img', {
+    src: `data:image/jpeg;base64,${shot.image}`, alt: t('Live browser view'), draggable: false,
+    onLoad: () => { image.current = shot },
+  }) : null,
+  failed || !shot ? h('span', { className: 'bt-browser-remote-status', role: 'status' }, t(failed ? 'Could not load the browser preview. Retrying…' : 'Waiting for browser preview…')) : null)
+}
+
+export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPages, hold, server = false }) {
   const page = useBrowserPages(pages => pages[tabId ?? '']) ?? EMPTY_PAGE
   const frame = useRef(null)
   const input = useRef(null)
@@ -350,7 +489,7 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
   // Cookie imports (the desktop app's bridge only): 'menu' lists browser profiles first,
   // then file/paste; a card stage runs connecting / remote-debug / running / paste →
   // preview → result | error above the guest.
-  const imports = actions.browserImport
+  const imports = server ? null : actions.browserImport
   const [flow, setFlow] = useState(null)
   // A mirrored flow: the cleanup on leaving the tab or the panel can still cancel
   // an unconfirmed pending import or an in-flight live harvest.
@@ -374,9 +513,11 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
 
   // The guest goes on screen once the panel has landed and settled on its width,
   // and only over a page: the empty, error and import states are the panel's own.
-  const showGuest = landed && !leaving && !covered && Boolean(page.url) && !page.error && flow === null
+  const blank = !page.url || (server && page.url === 'about:blank')
+  const showGuest = landed && !leaving && !covered && !blank && !page.error && flow === null
 
   useEffect(() => {
+    if (server) return undefined
     let raf = 0
     const update = () => {
       raf = 0
@@ -393,7 +534,7 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
     window.addEventListener('resize', schedule)
     update()
     return () => { cancelAnimationFrame(raf); observer.disconnect(); window.removeEventListener('resize', schedule) }
-  }, [])
+  }, [server])
 
   // Leaving the tab or the panel abandons an unconfirmed or in-flight import.
   useEffect(() => {
@@ -511,6 +652,7 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
     setFlowTracked(null)
   }
   useLayoutEffect(() => {
+    if (server) return undefined
     const element = frame.current
     if (!element || leaving || !tabId) { void actions.browserShow(null); return undefined }
     let raf = 0
@@ -532,12 +674,12 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
       observer.disconnect()
       window.removeEventListener('resize', schedule)
     }
-  }, [tabId, showGuest, leaving])
+  }, [tabId, showGuest, leaving, server])
 
   // A fresh tab starts on its address bar.
   useEffect(() => {
     setDraft(null)
-    if (landed && !page.url) input.current?.focus()
+    if (landed && blank) input.current?.focus()
   }, [tabId, landed])
 
   const go = (event) => {
@@ -546,7 +688,7 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
     if (text.trim() === '') return
     setDraft(null)
     input.current?.blur()
-    void actions.browserNavigate(tabId, text).then((opened) => { if (opened) actions.browserFocus(tabId) })
+    void Promise.resolve(actions.browserNavigate(tabId, text)).then((opened) => { if (opened) actions.browserFocus(tabId) })
   }
 
   const editing = draft !== null
@@ -598,6 +740,8 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
       }, h(ImportIcon)) : null,
       page.loading ? h('span', { className: 'bt-browser-progress', 'aria-hidden': true }) : null),
     h('div', { ref: frame, className: 'bt-browser-frame', 'data-guest': showGuest || undefined },
+      // Frame responses also carry navigation and error state, even with no visible image.
+      server && !leaving && tabId ? h(ServerBrowserViewport, { key: tabId, tabId, actions, frameRef: frame, visible: showGuest }) : null,
       flow === 'menu' ? h(ImportMenu, {
         sources: orderImportSources(sources, lastSourceId),
         lastSourceId,
@@ -631,7 +775,7 @@ export function BrowserView({ bot, tabId, leaving, landed, actions, useBrowserPa
             h('div', { className: 'bt-browser-empty-title' }, t('This page didn’t load')),
             h('div', { className: 'bt-browser-empty-text' }, t(page.error)),
             page.url ? h('button', { type: 'button', className: 'bt-browser-retry', onClick: () => { void actions.browserNavigate(tabId, page.url) } }, t('Try again')) : null)
-        : flow === null && !page.url
+        : flow === null && blank
           ? h('div', { className: 'bt-browser-empty' },
               h(BotMark, { bot, size: 48, state: 'idle', live: true }),
               h('div', { className: 'bt-browser-empty-title' }, t("{name}'s browser", { name: bot.name })),
@@ -1177,7 +1321,7 @@ export function BotPanel({ pane, leaving, room, overlay, roster, actions, useSes
     dragging ? createPortal(h('div', { className: 'bt-drag-shield', 'aria-hidden': true }), document.body) : null,
     hasStrip ? h(PanelStrip, { bot, roomSubject, subject: pane.id, view, ids: tabState.ids, active, sides: sideChats, side: pane.side, task: taskEntry, canBrowse, reading, onView: switchView, actions: panelActions, useBrowserPages }) : null,
     view === 'browser' && bot
-      ? h(BrowserView, { key: `browser:${active}`, bot, tabId: active, leaving, landed: landed && !settling, actions, useBrowserPages, hold })
+      ? h(BrowserView, { key: `browser:${active}`, bot, tabId: active, leaving, landed: landed && !settling, actions, useBrowserPages, hold, server: roster.browserMode === 'server' && !globalThis.dsBotApp?.browser })
       : view === 'side' && sideChat
         ? h('div', { key: `side:${sideChat.id}`, className: 'bt-panel-view' }, h(SideChatView, { subject: pane.id, chat: sideChat, roster, actions: panelActions }))
         : view === 'task' && taskEntry && taskBot

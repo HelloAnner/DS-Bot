@@ -2,13 +2,19 @@
 // user (#1504). The switches live beside the window, the shell decides whether it is in
 // front, and a click brings the window forward and opens that conversation.
 import { createElement as h, useEffect, useRef, useState } from 'react'
+import { browserNotify } from './approval-notices.js'
 import { Switch } from './bot-settings.js'
 import { t } from './i18n.js'
 import { NOTIFY_KEY, badgeOf, noticeText, notificationRows, notifyKind, readNotifyPrefs, writeNotifyPrefs } from './notify.js'
 
-const shellNotify = notice => Promise.resolve(bridge()?.notify?.(notice)).catch(() => {})
 const bridge = () => (typeof window === 'undefined' ? undefined : window.dsBotApp)
-const prefsNow = () => readNotifyPrefs(typeof localStorage === 'undefined' ? null : localStorage.getItem(NOTIFY_KEY))
+export function serverTabTitle(hostname, count) {
+  return `${count > 0 ? `(${count}) ` : ''}${hostname ? `${hostname} · ` : ''}DS Bot`
+}
+
+const prefsNow = () => {
+  try { return readNotifyPrefs(globalThis.localStorage?.getItem(NOTIFY_KEY)) } catch { return readNotifyPrefs(null) }
+}
 const savePrefs = (next) => {
   try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(next)) } catch { /* storage unavailable */ }
   return next
@@ -43,6 +49,13 @@ export function NotificationWatcher({ useSessions, useSessionStatus, useRoster, 
   const viewing = useSessions(list => Object.values(list.byId).find(session => (session?.retainedBy?.mainView ?? 0) > 0)?.id ?? null)
   const previous = useRef(new Map())
   const seeded = useRef(false)
+  const serverTab = roster.server?.enabled === true && !bridge()
+  const originalTitle = useRef(null)
+  useEffect(() => {
+    if (!serverTab) return undefined
+    originalTitle.current = document.title
+    return () => { document.title = originalTitle.current }
+  }, [serverTab])
   useEffect(() => {
     const shell = bridge()
     shell?.onOpenSession?.((sessionId) => { actions.openSession?.(sessionId) })
@@ -51,7 +64,11 @@ export function NotificationWatcher({ useSessions, useSessionStatus, useRoster, 
   useEffect(() => {
     const prefs = prefsNow()
     const open = document.hasFocus?.() !== false && document.visibilityState !== 'hidden'
-    const rows = notificationRows({ statuses, roster, approvals: work.approvals })
+    const shell = bridge()
+    const allRows = notificationRows({ statuses, roster, approvals: work.approvals })
+    const badge = badgeOf(allRows)
+    // In a browser, approval-notices sends its own more specific notification.
+    const rows = !shell && work.approvals?.length ? notificationRows({ statuses, roster }) : allRows
     const next = new Map()
     for (const row of rows) {
       const { id, sessionId, name, group, status: after } = row
@@ -68,33 +85,51 @@ export function NotificationWatcher({ useSessions, useSessionStatus, useRoster, 
         group,
       })
       if (kind === undefined) continue
-      void shellNotify({ sessionId: id, ...noticeText({ title: name, kind }) })
+      const notice = noticeText({ title: name, kind })
+      if (shell) void Promise.resolve(shell.notify?.({ sessionId: id, ...notice })).catch(() => {})
+      else browserNotify({ ...notice, tag: `ds-bot-chat-${id}` }, () => actions.openSession?.(id))
     }
     if (roster.ready !== false) seeded.current = true
     previous.current = next
-    bridge()?.setBadge?.(badgeOf(rows))
+    if (serverTab) document.title = serverTabTitle(roster.server.hostname, badge)
+    else shell?.setBadge?.(badge)
   }, [statuses, viewing, roster, work])
   return null
 }
 
 export function NotificationsRow() {
   const prefs = useNotifyPrefs()
-  const [permission, setPermission] = useState(undefined)
+  const shell = bridge()
+  const insecure = globalThis.isSecureContext === false
+  const web = shell || insecure ? undefined : globalThis.Notification
+  const [permission, setPermission] = useState(() => web?.permission)
+  const [requesting, setRequesting] = useState(false)
+  const request = async () => {
+    setRequesting(true)
+    try { setPermission(await web.requestPermission()) } catch { setPermission(web.permission) }
+    finally { setRequesting(false) }
+  }
   useEffect(() => {
+    if (!shell) return undefined
     let stopped = false
-    void Promise.resolve(bridge()?.notifyStatus?.()).then((value) => { if (!stopped) setPermission(value) }).catch(() => {})
+    void Promise.resolve(shell.notifyStatus?.()).then((value) => { if (!stopped) setPermission(value) }).catch(() => {})
     return () => { stopped = true }
   }, [])
   const denied = permission === 'denied'
+  const webHint = { granted: 'Browser notifications are allowed.', denied: 'Browser notifications are blocked. Change the permission in your browser.', default: 'Browser notifications need permission.' }[permission] ?? 'Browser notifications are unavailable here.'
   return h('div', { className: 'bt-set-row' },
     h('div', { className: 'bt-set-copy' },
       h('span', null, t('Notifications')),
       h('span', { className: 'bt-set-hint' }, t('Tell me when a Bot answers while I am looking elsewhere.')),
-      denied ? h('span', { className: 'bt-set-hint bt-danger', role: 'alert' }, t('System notifications are turned off for DS Bot. Unread marks still show them.')) : null),
-    h('div', { className: 'bt-set-control' }, h(Switch, {
-      label: t('Notifications'), on: prefs.enabled === true,
-      onChange: next => changeNotify({ enabled: next }),
-    })))
+      !shell ? h('span', { className: 'bt-set-hint', 'aria-live': 'polite' }, t(insecure ? 'Browser notifications require HTTPS or localhost.' : webHint)) : null,
+      shell && denied ? h('span', { className: 'bt-set-hint bt-danger', role: 'alert' }, t('System notifications are turned off for DS Bot. Unread marks still show them.')) : null),
+    h('div', { className: 'bt-set-control' },
+      !shell && permission === 'default' && typeof web?.requestPermission === 'function'
+        ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: requesting, onClick: request }, t('Enable browser notifications')) : null,
+      h(Switch, {
+        label: t('Notifications'), on: prefs.enabled === true,
+        onChange: next => changeNotify({ enabled: next }),
+      })))
 }
 
 /** Whether this conversation is muted, for the context menu's label. */

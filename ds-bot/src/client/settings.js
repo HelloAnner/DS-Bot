@@ -25,6 +25,7 @@ import { ComputerPage } from './computer.js'
 import { SchedulesPage } from './schedules.js'
 import { FeedbackIcon, FeedbackPage } from './feedback.js'
 import { AboutPage } from './about.js'
+import { NotificationsRow } from './notifications.js'
 import { ProvidersPage } from './providers-page.js'
 import { LocalAgentsPage } from './local-agents-page.js'
 import { BotModelsPage } from './bot-models-page.js'
@@ -305,7 +306,8 @@ function AppearancePage({ roster, actions, run, dsh }) {
 function GeneralPage({ roster, actions, run, dsh, openAdvanced = 0 }) {
   const items = (dsh?.items ?? []).map(row => row.id).filter(id => id !== '')
   const basicDsh = BASIC_ITEMS.filter(id => items.includes(id))
-  const more = items.filter(id => !LOOK_ITEMS.includes(id) && !BASIC_ITEMS.includes(id))
+  const serverTab = roster.server?.enabled === true && !globalThis.dsBotApp
+  const more = items.filter(id => !LOOK_ITEMS.includes(id) && !BASIC_ITEMS.includes(id) && !(serverTab && id === 'notifications'))
   const prefs = roster.prefs ?? {}
   const inAgentMode = Boolean(actions.setSurface && actions.surfaceMode?.() === 'agent')
   const [advancedOpen, setAdvancedOpen] = useState(() => Boolean(openAdvanced))
@@ -327,9 +329,10 @@ function GeneralPage({ roster, actions, run, dsh, openAdvanced = 0 }) {
         prefs.defaultBotModel ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setPrefs({ defaultBotModel: null })) }, t('Reset')) : null),
       h(SetRow, { label: t('Enter sends message') },
         h(Switch, { label: t('Enter sends message'), on: prefs.enterToSend !== false, onChange: enterToSend => run(actions.setPrefs({ enterToSend })) })),
-      basicDsh.includes('composer-enter') ? dshItem(dsh, 'composer-enter') : null),
-    h(LocationsSection, { key: 'places', actions, run }),
-    globalThis.dsBotApp ? h(LanSection, { key: 'lan' }) : null,
+      basicDsh.includes('composer-enter') ? dshItem(dsh, 'composer-enter') : null,
+      serverTab ? h(NotificationsRow) : null),
+    h(LocationsSection, { key: 'places', actions, run, server: serverTab ? roster.server : null }),
+    globalThis.dsBotApp && !roster.server?.enabled ? h(LanSection, { key: 'lan' }) : null,
     h(SetSection, { key: 'more', className: 'bt-dsh-items' },
       h('button', {
         type: 'button',
@@ -387,9 +390,7 @@ function LanSection() {
     error ? h('p', { role: 'alert', className: 'bt-phone-error' }, error) : null)
 }
 
-// The desktop app's preload hands its window `dsBotApp`; only there does the data location
-// show, since DSH keeps the plugin's data where it runs.
-function LocationsSection({ actions, run }) {
+function LocationsSection({ actions, run, server }) {
   const app = globalThis.dsBotApp
   const [team, setTeam] = useState(null)
   const [data, setData] = useState(null)
@@ -399,7 +400,7 @@ function LocationsSection({ actions, run }) {
   const busy = useRef(false)
   useEffect(() => {
     void Promise.resolve(actions.folders()).then(info => setTeam(info?.team ?? null)).catch(() => {})
-    if (app !== undefined) void Promise.resolve(app.dataLocation()).then(setData).catch(() => {})
+    if (app?.dataLocation) void Promise.resolve(app.dataLocation()).then(setData).catch(() => {})
   }, [])
   const pickTeam = (path) => {
     if (busy.current) return undefined
@@ -416,8 +417,9 @@ function LocationsSection({ actions, run }) {
   return h(SetSection, { title: t('Locations'), className: 'bt-set-places', tour: 'locations' },
     h(SetRow, { label: t('Team workspace') },
       team === null ? null : h(FolderMenu, { value: team, team: true, actions, run, onPick: pickTeam, disabled: moving })),
-    data === null ? null : h(SetRow, { label: t('Data location'), hint: data.path },
-      data.fixed ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: moving, onClick: () => { if (!busy.current) void run(app.moveData(team ?? undefined)) } }, t('Change…'))))
+    server?.dshHome ? h(SetRow, { label: t('Data location'), hint: server.dshHome })
+      : data === null ? null : h(SetRow, { label: t('Data location'), hint: data.path },
+        data.fixed ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: moving, onClick: () => { if (!busy.current) void run(app.moveData(team ?? undefined)) } }, t('Change…'))))
 }
 
 // The first Main Bot is the sidebar tile. Picking another Bot there hands it the role
@@ -812,7 +814,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
       case 'capabilities': return h(CapabilitiesPage, { roster, actions, run })
       case 'secrets': return h(SecretsPage, { roster, actions, run, Section: SetSection })
       case 'feedback': return h(FeedbackPage, { actions, run, Section: SetSection, Row: SetRow })
-      case 'about': return h(AboutPage, { useUpdate, actions, run, Section: SetSection, Row: SetRow, onStartTour: () => startTour('full') })
+      case 'about': return h(AboutPage, { useUpdate, actions, run, server: globalThis.dsBotApp ? null : roster.server, Section: SetSection, Row: SetRow, onStartTour: () => startTour('full') })
       default: return null
     }
   }

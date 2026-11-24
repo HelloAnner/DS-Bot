@@ -1,5 +1,6 @@
 // Client channel: the team view the browser renders, and the POST /api/bot endpoints.
 import { randomUUID } from 'node:crypto'
+import { hostname } from 'node:os'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { PUBLISH_ISSUE } from './issue-report.js'
 import { install as installBtw } from './btw.js'
@@ -46,6 +47,16 @@ export function install(rt) {
   installBtw(rt)
   installSide(rt)
   const { ctx, state } = rt
+  const restart = rt.config?.serverRestart ?? (process.env.DS_BOT_SUPERVISED === '1' ? () => process.kill(process.pid, 'SIGTERM') : undefined)
+  const startedAt = Date.now()
+  const server = rt.serverMode ? {
+    enabled: true, hostname: hostname(), platform: process.platform, dshHome: rt.dshHome,
+    botHome: rt.home, unrestricted: rt.unrestricted, startedAt, canRestart: typeof restart === 'function',
+  } : { enabled: false }
+  let restarting = false
+  const serverInfo = () => ({ ...server, ...(server.enabled ? {
+    teamWorkspace: rt.teamFolder() ?? rt.defaultTeamFolder(), uptimeMs: Math.max(0, Date.now() - startedAt),
+  } : {}) })
 
   // The DSH interface language of the last browser that asked for the team.
   let uiLocale
@@ -123,8 +134,9 @@ export function install(rt) {
     permissions: rt.permissionCatalog?.() ?? null,
     modelsKey: modelsKey(),
     prefs: state.prefs,
-    // Whether a Desktop window should serve Bot browser reads (see browser.js).
     browser: rt.browserEnabled,
+    browserMode: rt.browserMode,
+    server,
     // False when config.memory turns memory off: no Memory row or panel.
     memory: rt.memoryEnabled !== false,
     // Set while another dsh host holds the team (store.js): why this one cannot change it.
@@ -184,7 +196,7 @@ export function install(rt) {
   }
   // What a host that only reads the team may still answer.
   // Updates change the dsh profile, not the team, so a reading host may run them too.
-  const READS = new Set(['secret-store', 'secret-unlock', 'state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'agent-chat', 'bot-task-read', 'run-stats', 'room-progress', 'group-rows', 'group-relay-replies', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'computer-system-status', 'computer-shot', 'local-agents', 'local-agent-models', 'browser-frame', 'hello', 'notices', 'avatar', 'room-chat', 'usage-summary', 'image', 'markdown-image', 'file-download', 'changes-check', 'deepseek-services', 'deepseek-synthesize'])
+  const READS = new Set(['server-info', 'browser-tab-list', 'browser-tab-frame', 'secret-store', 'secret-unlock', 'state', 'models', 'efforts', 'providers', 'provider-models', 'earlier', 'chat', 'agent-chat', 'bot-task-read', 'run-stats', 'room-progress', 'group-rows', 'group-relay-replies', 'exchange', 'exchange-text', 'file-text', 'usage', 'schedules', 'memory-view', 'browser-wait', 'browser-result', 'diagnostics', 'diagnostics-log', 'diagnostics-clear', 'update-check', 'update-install', 'dsh-update-install', 'repo-stars', 'approval-answer', 'thinking', 'avatar-library', 'computer-system-status', 'computer-shot', 'local-agents', 'local-agent-models', 'browser-frame', 'hello', 'notices', 'avatar', 'room-chat', 'usage-summary', 'image', 'markdown-image', 'file-download', 'changes-check', 'deepseek-services', 'deepseek-synthesize'])
 
   async function setPrefs(body) {
     if (body.theme !== undefined) {
@@ -265,6 +277,35 @@ export function install(rt) {
       const readOnly = rt.readOnly()
       if (readOnly !== undefined && !READS.has(endpoint)) return fail(readOnly, 'bot/read-only')
       switch (endpoint) {
+        case 'server-info':
+          return ok(serverInfo())
+        case 'server-restart': {
+          if (!server.enabled || !server.canRestart) return fail('This server does not have a restart supervisor.', 'bot/refused')
+          if (!restarting) {
+            restarting = true
+            // Let the fetch route send its acknowledgement before signalling the host.
+            setTimeout(() => {
+              void Promise.resolve().then(() => restart()).catch(error => {
+                restarting = false
+                rt.warn('ds-bot: server restart failed: %s', error)
+              })
+            }, 100).unref()
+          }
+          return ok({ restarting: true })
+        }
+        case 'browser-tab-list':
+        case 'browser-tab-open':
+        case 'browser-tab-select':
+        case 'browser-tab-nav':
+        case 'browser-tab-cmd':
+        case 'browser-tab-close':
+        case 'browser-tab-frame':
+        case 'browser-tab-input': {
+          if (rt.browserMode !== 'server') return fail('Server browser tabs are off on this host', 'bot/browser-off')
+          const botId = typeof body.botId === 'string' ? body.botId : ''
+          if (rt.botOf(botId) === undefined) return fail('Unknown Bot', 'bot/not-found')
+          return ok(await rt.serverBrowser.call(endpoint, botId, body))
+        }
         case 'state': {
           if (typeof body.locale === 'string' && /^[a-z]{2,3}(-[\w-]+)?$/i.test(body.locale)) uiLocale = body.locale
           if (readOnly === undefined) await rt.bootstrap()
@@ -778,6 +819,7 @@ export function install(rt) {
           if (!rt.botOf(botId)) return fail('Unknown Bot', 'bot/not-found')
           // Taking over a handoff keeps its reason, note, and call, so its card stays up.
           const asked = rt.browserChannel.holdOf(botId)
+          rt.serverBrowser?.pinPluginPage(botId)
           rt.browserChannel.setHold(botId, asked?.callId !== undefined
             ? { by: 'user', reason: asked.reason, note: asked.note, callId: asked.callId, ...(asked.sessionId !== undefined ? { sessionId: asked.sessionId } : {}) }
             : { by: 'user', reason: 'takeover', note: 'The user is controlling this browser.' })
@@ -816,6 +858,11 @@ export function install(rt) {
           await rt.load()
           const botId = String(body.botId ?? '')
           if (!rt.botOf(botId)) return fail('Unknown Bot', 'bot/not-found')
+          const hold = { by: 'user', reason: 'stopped', note: 'The user is controlling this browser.' }
+          if (rt.browserMode === 'server') {
+            rt.serverBrowser.pinPluginPage(botId)
+            rt.browserChannel.setHold(botId, hold)
+          }
           const sessionId = rt.chatOf(botId)
           if (sessionId && rt.live.get(sessionId)?.turn !== undefined) {
             const agent = await rt.resolveAgent(sessionId)
@@ -824,7 +871,7 @@ export function install(rt) {
           for (const room of Object.values(rt.state.rooms ?? {})) {
             if (room.members?.includes(botId)) await rt.stopMemberWork?.(room.id, botId)
           }
-          rt.browserChannel?.setHold(botId, { by: 'user', reason: 'stopped', note: 'The user is controlling this browser.' })
+          if (rt.browserMode !== 'server') rt.browserChannel?.setHold(botId, hold)
           return ok(true)
         }
         case 'im-add':

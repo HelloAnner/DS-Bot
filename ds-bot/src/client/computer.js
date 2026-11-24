@@ -300,13 +300,55 @@ export function SettledComputerHandoff({ handoff }) {
           : h('span', { className: 'bt-q-check', title: t('Done') }, h(CheckIcon)))))
 }
 
+export function computerIndicatorEntries(live, server) {
+  const entries = (live.leases ?? []).map(entry => ({
+    key: `l:${entry.botId}`, botId: entry.botId, app: entry.kind === 'foreground' ? t('In the foreground') : entry.appName,
+  }))
+  for (const [botId, entry] of Object.entries(live.bots ?? {})) {
+    if (entry.waitingFor === 'user-idle') entries.push({ key: `w:${botId}`, botId, waiting: true, app: t('waits for the computer') })
+    else if (server && entry.state === 'bot' && !entries.some(row => row.botId === botId)) entries.push({ key: `b:${botId}`, botId, app: entry.app ?? t('Operating') })
+  }
+  if (server) for (const [botId, hold] of Object.entries(live.holds ?? {})) {
+    entries.push({ key: `h:${botId}`, botId, hold, app: t(hold.by === 'user' ? 'You have the computer' : 'Waiting for you') })
+  }
+  return entries
+}
+
+function ComputerPreview({ bot, attachmentId, actions, close }) {
+  const dialog = useRef(null)
+  const titleId = useId()
+  const title = t('{name} · Computer use', { name: bot })
+  useEffect(() => { dialog.current.showModal() }, [])
+  return h('dialog', { ref: dialog, className: 'bt-computer-preview', 'aria-labelledby': titleId, onClose: close },
+    h('div', { className: 'bt-computer-preview-head' },
+      h('strong', { id: titleId }, title),
+      h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: close }, t('Close'))),
+    h(ComputerPreviewShot, { key: attachmentId ?? '', attachmentId, actions }))
+}
+
+function ComputerPreviewShot({ attachmentId, actions }) {
+  const [shot, setShot] = useState(undefined)
+  useEffect(() => {
+    if (!attachmentId) return undefined
+    let live = true
+    void actions.computerShot(attachmentId).then(value => { if (live) setShot(value) }, () => { if (live) setShot(null) })
+    return () => { live = false }
+  }, [attachmentId, actions])
+  return shot?.dataUrl ? h('img', { className: 'bt-cview-shot', src: shot.dataUrl, alt: t('Latest screenshot') })
+    : h('p', { role: 'status' }, t(!attachmentId ? 'Waiting for a screenshot…' : shot === undefined ? 'Loading screenshot…' : 'Could not load the screenshot.'))
+}
+
 // ---- The indicator: who is on the computer, with a Stop for each. ----
-export function ComputerIndicator({ useComputer, useRoster, actions }) {
+export function ComputerIndicator({ useComputer, useRoster, actions, browserTab }) {
   const live = useComputer?.(map => map) ?? {}
   const roster = useRoster(value => value)
+  const server = browserTab === true && roster.server?.enabled === true
+  const [preview, setPreview] = useState(null)
   const leases = live.leases ?? []
-  const waiting = Object.entries(live.bots ?? {}).filter(([, entry]) => entry.waitingFor === 'user-idle')
-  if (leases.length === 0 && waiting.length === 0) return null
+  const entries = computerIndicatorEntries(live, server)
+  const activePreview = server && entries.some(entry => entry.botId === preview) ? preview : null
+  useEffect(() => { if (preview !== null && activePreview === null) setPreview(null) }, [preview, activePreview])
+  if (entries.length === 0) return null
   const botOf = id => roster.byId[id]
   const nameOf = id => botOf(id)?.name ?? t('a Bot')
   const avatarOf = (id) => {
@@ -314,25 +356,32 @@ export function ComputerIndicator({ useComputer, useRoster, actions }) {
     if (typeof look.image === 'string' && look.image.startsWith('data:image/')) return h('img', { className: 'bt-cbar-ava', src: look.image, alt: '' })
     return h('span', { className: 'bt-cbar-ava bt-cbar-ava-dot', style: { background: inkFill(look.color) } }, String(nameOf(id)).slice(0, 1))
   }
-  const entries = [
-    ...leases.map(entry => ({ key: `l:${entry.botId}`, botId: entry.botId, waiting: false, app: entry.kind === 'foreground' ? t('In the foreground') : entry.appName })),
-    ...waiting.map(([botId]) => ({ key: `w:${botId}`, botId, waiting: true, app: t('waits for the computer') })),
-  ]
-  return h('div', { className: 'bt-cbar', role: 'status' },
+  const run = promise => { void Promise.resolve(promise).catch(error => actions.reportError?.(error, 'computer')) }
+  return h('div', { className: 'bt-cbar', role: 'group', 'aria-label': t('Computer use'), 'data-server': server || undefined },
     h('span', { className: 'bt-cbar-live', title: t('Computer use') }),
     ...entries.flatMap((entry, index) => [
       index > 0 ? h('span', { key: `s${index}`, className: 'bt-cbar-sep' }) : null,
-      h('span', { key: entry.key, className: entry.waiting ? 'bt-cbar-entry bt-cbar-wait' : 'bt-cbar-entry' },
+      h('span', { key: entry.key, className: entry.waiting || entry.hold ? 'bt-cbar-entry bt-cbar-wait' : 'bt-cbar-entry' },
         avatarOf(entry.botId),
         h('span', { className: 'bt-cbar-text' },
           h('b', { className: 'bt-cbar-name' }, nameOf(entry.botId)),
           h('i', { className: 'bt-cbar-app' }, entry.app)),
-        entry.waiting
-          ? h('button', { type: 'button', className: 'bt-cbar-go', onClick: () => void actions.computerAllowForeground(entry.botId) }, t('Let it continue'))
-          : h('button', { type: 'button', className: 'bt-cbar-stop', 'aria-label': t('Stop'), title: t('Stop'), onClick: () => void actions.computerStop(entry.botId) },
-              h('span', { className: 'bt-cbar-stopsq' }))),
+        server ? h('button', { type: 'button', className: 'bt-cbar-go', 'aria-haspopup': 'dialog', onClick: () => setPreview(entry.botId) }, t('Preview')) : null,
+        entry.hold ? h('button', { type: 'button', className: 'bt-cbar-go', onClick: () => run(entry.hold.by === 'user'
+          ? actions.computerHandback(entry.botId)
+          : actions.computerHoldAnswer(entry.botId, { callId: entry.hold.callId, outcome: 'done' })) }, t('Let go'))
+          : entry.waiting ? h('button', { type: 'button', className: 'bt-cbar-go', onClick: () => run(actions.computerAllowForeground(entry.botId)) }, t(server ? 'Let go' : 'Let it continue'))
+            : null,
+        (!entry.waiting && !entry.hold) || (server && entry.hold?.by === 'bot')
+          ? h('button', { type: 'button', className: 'bt-cbar-stop', 'aria-label': t('Stop'), title: t('Stop'), onClick: () => run(entry.hold
+            ? Promise.resolve(actions.computerHoldAnswer(entry.botId, { callId: entry.hold.callId, outcome: 'skip' })).then(() => actions.computerStop(entry.botId))
+            : actions.computerStop(entry.botId)) }, h('span', { className: 'bt-cbar-stopsq' })) : null),
     ]),
-    leases.length > 1 ? h('button', { type: 'button', className: 'bt-cbar-all', onClick: () => void actions.computerStop(null, true) }, t('Stop all')) : null)
+    leases.length > 1 ? h('button', { type: 'button', className: 'bt-cbar-all', onClick: () => run(actions.computerStop(null, true)) }, t('Stop all')) : null,
+    activePreview ? h(ComputerPreview, {
+      key: activePreview, bot: nameOf(activePreview), attachmentId: live.bots?.[activePreview]?.lastShot?.attachmentId,
+      actions, close: () => setPreview(null),
+    }) : null)
 }
 
 export const COMPUTER_CSS = `

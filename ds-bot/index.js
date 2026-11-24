@@ -80,6 +80,8 @@ export function createRuntime(ctx, config = {}) {
   const rt = {
     ctx,
     config,
+    serverMode: config.serverMode === true || process.env.DS_BOT_SERVER === '1',
+    unrestricted: config.unrestricted === true || process.env.DS_BOT_UNRESTRICTED === '1',
     dshHome,
     home,
     statePath: join(home, 'state.json'),
@@ -95,6 +97,7 @@ export function createRuntime(ctx, config = {}) {
     },
   }
   for (const module of MODULES) module.install(rt)
+  if (rt.unrestricted) permissions.installCreationDefaults(rt)
   rt.installed = true
   // A live Agent can be scoped before the last module has added its tools (the memory
   // module starts a load during install): complete the scope now that every tool is in.

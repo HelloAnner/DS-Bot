@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { mountBrowserPlugin } from './browser/mount.js'
+import { explicitlyRestricted, restrictedSession } from './permissions.js'
 import { sessionComplete } from './browser/session-model.js'
 import * as refs from './browser/refs.js'
 import * as script from './browser/script.js'
@@ -80,6 +81,11 @@ async function authorizeBrowserAction(rt, exec, botId, action) {
     throw new Error(`This looks like a payment ("${action.label}" on ${action.host}). The user makes payments themselves: call browser_handoff with reason "payment" and stop. Nothing was done.`)
   }
   if (!GRANT_KINDS.has(action.kind) || grantAllows(bot, action)) return
+  if (rt.unrestricted) {
+    const sessionId = exec.agent?.session?.header?.id ?? exec.agent?.id
+    const room = rt.roomOf(rt.groupOwners.get(sessionId)?.roomId ?? rt.taskOwners?.get(sessionId)?.roomId)
+    if (!explicitlyRestricted(room?.permission ?? bot.permission) && !restrictedSession(rt.ctx, exec.agent?.session)) return
+  }
 
   const approval = rt.ctx.get?.('approval')
   const agent = exec.agent
@@ -130,7 +136,7 @@ export function install(rt) {
   const downloadGraceMs = optionalNumber(rt.config, 'browserDownloadGraceMs')
   const headless = typeof rt.config.browserHeadless === 'boolean'
     ? rt.config.browserHeadless
-    : defaultBrowserHeadless(process.platform)
+    : rt.serverMode || defaultBrowserHeadless(process.platform)
   const downloadRoot = join(rt.home, 'browser-downloads')
   async function downloadRoots(botId) {
     await rt.load()
@@ -139,11 +145,16 @@ export function install(rt) {
     const working = requested !== undefined && await rt.isFolder(requested) ? requested : team
     return [...new Set([working, team].filter(root => typeof root === 'string' && isAbsolute(root)))]
   }
+  const toolDefs = plugin.tools ?? plugin.toolDefs
   const mounted = {}
   rt.browserFrame = botId => mounted.frame?.(botId)
   mountBrowserPlugin(rt.ctx, {
     api: mounted,
-    toolDefs: plugin.tools ?? plugin.toolDefs,
+    toolDefs: rt.browserMode === 'server' ? toolDefs.map(spec => ({ ...spec, execute(args, driver) {
+      // Owner input comes through the tab API; this gate is only for Bot tools.
+      if (rt.browserChannel.holdOf(driver.botId) !== null) throw new Error('The browser is waiting for the user. Ask them to give control back.')
+      return spec.execute(args, driver)
+    } })) : toolDefs,
     register: tool => rt.teamTools.push(tool),
     defineTool,
     profileRoot: join(rt.home, 'browser-profiles'),
@@ -158,9 +169,10 @@ export function install(rt) {
     executablePath,
     downloadGraceMs,
     connect: process.env.DS_BOT_APP === '1' && typeof process.send === 'function' ? appBrowserEndpoint : undefined,
+    openSession: rt.serverBrowser?.openPluginSession,
     getHold: botId => rt.browserChannel?.holdOf(botId) ?? null,
     onHold: (botId, hold) => rt.browserChannel?.setHold(botId, hold && handoffHold(rt, botId, hold)),
-    subscribeHolds: listener => rt.browserChannel?.subscribeHolds?.(listener),
+    subscribeHolds: rt.serverBrowser ? undefined : listener => rt.browserChannel?.subscribeHolds?.(listener),
     authorize: (exec, botId, action) => authorizeBrowserAction(rt, exec, botId, action),
     completeFor: rt.config.browserComplete
       ? () => rt.config.browserComplete

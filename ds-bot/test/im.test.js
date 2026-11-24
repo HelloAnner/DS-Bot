@@ -2626,6 +2626,12 @@ test('reply origin: cards and approvals leave only on the connection whose chat 
   t.after(s.stop)
   const telegram = s.fake
   const dingtalk = fakeAdapter()
+  // Team saves start card delivery, but do not await it. A view card also
+  // persists its reply code before sending. Wait for the adapter, not a delay.
+  const waitForTelegram = async (matches) => {
+    const deadline = Date.now() + 5000
+    while (!telegram.sent.some(matches) && Date.now() < deadline) await delay(10)
+  }
   const original = adapters.dingtalk
   adapters.dingtalk = dingtalk
   t.after(() => { adapters.dingtalk = original })
@@ -2645,31 +2651,37 @@ test('reply origin: cards and approvals leave only on the connection whose chat 
 
   s.rt.state.questions.a = { id: 'q1', question: 'Which?', options: [{ label: 'yes' }, { label: 'no' }] }
   await s.rt.save()
-  await s.flush()
+  await waitForTelegram(entry => entry.buttons?.[0]?.data.startsWith('q:'))
   assert.equal(telegram.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('q:')).length, 1, 'the asking chat got its question card')
   assert.equal(dingtalk.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('q:')).length, 0, 'the other connection got no question card')
   delete s.rt.state.questions.a
 
   s.rt.state.secretRequests = { a: [{ id: 's1', name: 'MY_KEY', purpose: 'for tests', status: 'pending', askedAt: 1 }] }
   await s.rt.save()
-  await s.flush()
+  await waitForTelegram(entry => entry.text.includes('MY_KEY'))
   assert.equal(telegram.sent.filter(entry => entry.text.includes('MY_KEY')).length, 1, 'the asking chat got the secret request')
   assert.equal(dingtalk.sent.filter(entry => entry.text.includes('MY_KEY')).length, 0, 'the other connection got no secret request')
   s.rt.state.secretRequests = {}
 
   s.rt.state.views.a = { id: 'v1', title: 'Pick', view: { type: 'text', text: 'Answer me' } }
   await s.rt.save()
-  await s.flush()
+  await waitForTelegram(entry => entry.text.includes('Pick'))
   assert.equal(telegram.sent.filter(entry => entry.text.includes('Pick')).length, 1, 'the asking chat got the view card')
   assert.equal(dingtalk.sent.filter(entry => entry.text.includes('Pick')).length, 0, 'the other connection got no view card')
   delete s.rt.state.views.a
 
   telegram.sent.length = 0
   dingtalk.sent.length = 0
-  void s.fireApprovals({ agent: { id: 'a' }, toolName: 'bash', reason: 'run it', signal: new AbortController().signal }, () => new Promise(() => {}))
-  await s.flush()
-  assert.equal(telegram.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('a:')).length, 1, 'the asking chat got the approval card')
-  assert.equal(dingtalk.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('a:')).length, 0, 'the other connection got no approval card')
+  const approval = new AbortController()
+  const pending = s.fireApprovals({ agent: { id: 'a' }, toolName: 'bash', reason: 'run it', signal: approval.signal }, () => new Promise(() => {}))
+  try {
+    await waitForTelegram(entry => entry.buttons?.[0]?.data.startsWith('a:'))
+    assert.equal(telegram.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('a:')).length, 1, 'the asking chat got the approval card')
+    assert.equal(dingtalk.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('a:')).length, 0, 'the other connection got no approval card')
+  } finally {
+    approval.abort()
+    await pending
+  }
 })
 
 test('reply origin: an answer from IM keeps its chat for the turn the answer continues', async (t) => {

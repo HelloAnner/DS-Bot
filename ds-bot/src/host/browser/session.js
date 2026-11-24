@@ -87,7 +87,7 @@ function inspectWriteTarget(el, { url, mode, active = false }) {
 // playwright-core ships with DS Bot and drives the desktop app's own browser; a
 // full playwright the user installed also brings its own Chromium build.
 async function loadChromium(playwrightUrl) {
-  const loaded = playwrightUrl ? await import(playwrightUrl) : await import('playwright').catch(() => import('playwright-core'))
+  const loaded = playwrightUrl ? await import(playwrightUrl) : await import('playwright-core').catch(() => import('playwright'))
   const chromium = loaded.chromium ?? loaded.default?.chromium
   if (!chromium) throw new Error('Playwright has no chromium export. Install playwright and its Chromium build before using a browser plugin.')
   return chromium
@@ -125,7 +125,7 @@ export async function openBotBrowser({ botId, profileRoot, downloadDir, headless
   return createSession({ context, browser, page, botId, userDataDir, cookieFile, downloadDir: getDownloadDir, actionTimeout, downloadGraceMs, getHold, onHold, uploadRoots })
 }
 
-export function createSession({ context, browser, page, botId, userDataDir, cookieFile, downloadDir, actionTimeout = ACTION_TIMEOUT, downloadGraceMs = DOWNLOAD_GRACE_MS, getHold, onHold, uploadRoots }) {
+export function createSession({ context, browser, page, botId, userDataDir, cookieFile, downloadDir, actionTimeout = ACTION_TIMEOUT, downloadGraceMs = DOWNLOAD_GRACE_MS, getHold, onHold, uploadRoots, sharedContext = false, validateUrl = String }) {
   const pages = new Set()
   const unknownByOrigin = new Map()
   const unknownPageOrigins = new WeakMap()
@@ -151,10 +151,14 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
   // Every later action waits for this. A tab that cannot load (it crashed, say) is not made
   // current, and its failure must not stay a rejection: each action would fail on it again,
   // and DSH ends the whole process on a rejection nobody handles.
+  const sharedHold = () => sharedContext && (hold !== null || getHold?.() != null)
   function activateAfterLoad(target) {
-    pendingPageReady = waitForPageReady(target).then(() => {
-      if (!target.isClosed()) current = target
+    // Owner tabs remain available to the Bot, but cannot replace its held tab.
+    if (sharedHold()) return
+    const loading = waitForPageReady(target).then(() => {
+      if (!target.isClosed() && (!sharedContext || (pendingPageReady === loading && !sharedHold()))) current = target
     }, () => {})
+    pendingPageReady = loading
   }
 
   function trackPage(target, activate = false) {
@@ -193,6 +197,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
 
   for (const target of context.pages()) trackPage(target)
   context.on('page', target => trackPage(target, true))
+  if (sharedContext) context.once('close', () => { closed = true; activeDownloads?.notify?.() })
 
   function openPages() {
     return context.pages().filter(target => !target.isClosed())
@@ -202,6 +207,12 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
     if (current && !current.isClosed()) return current
     current = openPages().at(-1) ?? null
     return current
+  }
+
+  function pinCurrentPage() {
+    // Discard an activation that was queued before the hold, even if it finishes after give-back.
+    if (sharedContext) pendingPageReady = Promise.resolve()
+    return activePage()
   }
 
   function originOf(target) {
@@ -513,6 +524,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
 
   async function performWrite(action, target, perform) {
     await authorizeWrite(action)
+    if (sharedContext) ready()
     return captureAction(async () => {
       const requests = []
       const pendingRequests = new Map()
@@ -588,6 +600,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
   async function finishAction(perform, target = activePage(), waitForDownload = true) {
     let resolvedAt
     return captureAction(async () => {
+      if (sharedContext) ready()
       await perform()
       resolvedAt = Date.now()
       await settle()
@@ -610,18 +623,23 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
     botId,
     userDataDir,
     get hold() { return hold },
+    get closed() { return closed },
     get lastImage() { return lastImage },
     takeLastImage() {
       const image = lastImage
       lastImage = ''
       return image
     },
+    pinCurrentPage,
     url: () => activePage()?.url() ?? '',
     async open(url) {
       ready()
       await clearPendingDelete()
-      const target = activePage()
-      return finishAction(() => target.goto(String(url), { waitUntil: 'domcontentloaded', timeout: 30_000 }), target, false)
+      const wanted = validateUrl(url)
+      const target = activePage() ?? (sharedContext ? await context.newPage() : undefined)
+      ready()
+      if (!target) throw new Error('The browser has no open tabs.')
+      return finishAction(() => target.goto(wanted, { waitUntil: 'domcontentloaded', timeout: 30_000 }), target, false)
     },
     tabs,
     async selectTab(index) {
@@ -631,6 +649,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
         throw new Error(`No tab at index ${index}.`)
       }
       await clearPendingDelete()
+      ready()
       current = open[index]
       await settle()
       return snapshotText()
@@ -703,6 +722,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
       })
       if (paymentField) throw new Error('Payment details are entered by the user. Call browser_handoff with reason "payment". Nothing was typed.')
       return captureAction(async () => {
+        if (sharedContext) ready()
         await locator.fill(String(text), { timeout: actionTimeout })
         if (submit) {
           const action = await focusedAction(target)
@@ -803,7 +823,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
       ready()
       const kind = REASONS.has(reason) ? reason : 'other'
       hold = { reason: kind, note: String(note ?? '').slice(0, 300) }
-      onHold?.({ by: 'bot', reason: kind, note: hold.note, ...origin })
+      onHold?.({ by: 'bot', reason: kind, note: hold.note, ...origin }, pinCurrentPage())
       const recorded = getHold?.()
       const guidance = origin?.callId !== undefined && recorded && recorded.callId === undefined
         ? 'There is no handoff card in this conversation. Tell the user here what you need them to do. After they reply, call browser_resume, then browser_snapshot to check the page.'
@@ -811,7 +831,9 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
       return `Waiting for the user (${kind}). ${hold.note || 'Ask them to take over.'} ${guidance}`
     },
     resume() {
-      if (getHold?.()?.by === 'user') throw new Error('The user has taken over this browser. Only the user can give it back.')
+      const externalHold = getHold?.()
+      if (externalHold?.by === 'user') throw new Error('The user has taken over this browser. Only the user can give it back.')
+      if (sharedContext && externalHold) throw new Error('Only the user can give this browser back.')
       hold = null
       onHold?.(null)
       return 'The browser is yours again.'
@@ -875,6 +897,7 @@ export function createSession({ context, browser, page, botId, userDataDir, cook
       closed = true
       activeDownloads?.notify?.()
       for (const { download } of activeDownloads?.items ?? []) await download.cancel().catch(() => {})
+      if (sharedContext) return
       if (browser) { await browser.close().catch(() => {}); return }
       const cookies = await context.cookies().catch(() => [])
       const kept = cookies.map(cookie => cookie.expires > 0 ? cookie : { ...cookie, expires: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 })

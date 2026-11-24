@@ -3,6 +3,7 @@
 // folder is fixed when it is made, so a change moves the conversation on to a fresh
 // part (parts.js).
 import { ownChatSessions } from './threads.js'
+import { explicitlyRestricted, restrictedSession } from './permissions.js'
 import { mkdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
@@ -178,10 +179,26 @@ export function install(rt) {
   async function approveFolder(exec, options) {
     const { path, who } = options
     const team = await realTeam()
-    const policy = ctx.get?.('sandboxPolicy')
     if (path === undefined || (team !== undefined && within(path, team))) return
     const agent = exec.agent
-    if (policy !== undefined) {
+    const policy = ctx.get?.('sandboxPolicy')
+    const resolvePlaces = places => Promise.all([...new Set(places.map(place => place.sessionId).filter(Boolean))]
+      .map(id => rt.resolveAgent(id)))
+    if (rt.unrestricted) {
+      const sessionId = agent?.session?.header?.id ?? agent?.id
+      const callerRoom = rt.roomOf(rt.groupOwners?.get(sessionId)?.roomId ?? rt.taskOwners?.get(sessionId)?.roomId)
+      const caller = rt.botOf(rt.selfOf(sessionId))
+      const places = folderPlaces(options)
+      if (!explicitlyRestricted(callerRoom?.permission ?? caller?.permission)
+        && !restrictedSession(ctx, agent?.session)
+        && !places.some(place => explicitlyRestricted(place.preset))) {
+        // Legacy/full-access shortcuts do not apply to explicitly restricted Sessions.
+        if (policy === undefined && ctx.get?.('permissionPresets')?.current === undefined) return
+        const destinations = places.filter(place => place.sessionId !== sessionId || agent?.session === undefined)
+        const agents = await resolvePlaces(destinations)
+        if (!agents.some(entry => restrictedSession(ctx, entry.session))) return
+      }
+    } else if (policy !== undefined) {
       const presets = ctx.get?.('permissionPresets')
       if (agent?.session !== undefined && policy.resolve({ session: agent.session }).mode === 'danger-full-access') {
         if (presets === undefined) return
@@ -201,8 +218,7 @@ export function install(rt) {
         }
       }
       const places = folderPlaces(options)
-      const sessions = [...new Set(places.map(place => place.sessionId).filter(Boolean))]
-      const agents = await Promise.all(sessions.map(id => rt.resolveAgent(id)))
+      const agents = await resolvePlaces(places)
       const modes = places.length === 0 ? [fallback] : [
         ...agents.map(entry => policy.resolve({ session: entry.session }).mode),
         ...places.filter(place => Object.hasOwn(place, 'preset')).map(place => presetMode(place.preset)),
