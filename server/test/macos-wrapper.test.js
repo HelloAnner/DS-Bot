@@ -43,6 +43,8 @@ test('macOS wrapper dry run chooses a native Node, plans stale builds, and disco
     require('node:os').networkInterfaces = () => ({ fixture: (process.env.TEST_ADDRESS || '').split(' ').filter(Boolean)
       .map(address => ({ address, family: 'IPv4', internal: false })) })
     require('node:dns').lookup = (host, options, done) => done(null, [{ address: process.env.TEST_DNS }])
+    require('node:dns').promises.lookupService = async () => ({ hostname: process.env.TEST_PTR || 'unknown' })
+    require('node:dns').promises.lookup = async () => [{ address: process.env.TEST_DNS }]
   `)
 
   const home = join(root, 'home')
@@ -77,6 +79,15 @@ test('macOS wrapper dry run chooses a native Node, plans stale builds, and disco
   }
   assert.match(run('restart', { TEST_ADDRESS: '192.168.0.9 100.64.2.3', TEST_LAN: '192.168.0.10' }),
     /Build and refresh[\s\S]*<string>--host<\/string><string>100\.64\.2\.3<\/string>/)
+  for (const [name, ip] of [['mac-mini-1002', '100.97.11.100'], ['mac-mini-1003', '100.126.73.0']]) {
+    const fqdn = `${name}.tail-example.ts.net`
+    const env = { TEST_ADDRESS: ip, TEST_PTR: fqdn, TEST_DNS: ip }
+    const plan = run('restart', env)
+    for (const [flag, value] of [['--host', ip], ['--trusted-host', fqdn], ['--trusted-host', name], ['--public-url', `http://${name}:54674/`]]) {
+      assert.ok(plan.includes(`<string>${flag}</string><string>${value}</string>`), `${flag} ${value}`)
+    }
+    assert.ok(!run('restart', { ...env, TEST_DNS: '100.64.2.3' }).includes(fqdn))
+  }
   for (const path of ['ds-bot/bin/doctor.mjs', 'ds-bot/link.js', ...linkInputs]) {
     put(path, 'changed\n')
     assert.match(run('start'), /Build and refresh/, path)

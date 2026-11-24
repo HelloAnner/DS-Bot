@@ -72,12 +72,6 @@ if command -v tailscale >/dev/null; then
     console.log(/^[a-z0-9.-]+$/i.test(name || "") ? name : "")
   ')
 fi
-if [[ -n $tail_name ]]; then
-  short_name=${tail_name%%.*}
-  add_trust "$tail_name"
-  add_trust "$short_name"
-fi
-
 if [[ -z ${HOST:-} ]]; then
   HOST=$tail_ip
   if [[ -z $HOST ]]; then
@@ -96,6 +90,27 @@ if [[ -z ${HOST:-} ]]; then
     ip=${addresses%%$'\n'*}
     if is_ipv4 "$ip"; then HOST=$ip; else HOST=127.0.0.1; fi
   fi
+fi
+
+# macOS can resolve MagicDNS through the system resolver even without the CLI.
+if [[ -z $tail_name ]] && is_tail_ip "$HOST"; then
+  tail_name=$("$NODE_BIN" -e '
+    const dns = require("node:dns").promises
+    const ip = process.argv[1]
+    const timeout = setTimeout(() => process.exit(0), 3000)
+    ;(async () => {
+      const { hostname } = await dns.lookupService(ip, 0)
+      const name = hostname.toLowerCase().replace(/\.$/, "")
+      if (!/^[a-z0-9-]+\.[a-z0-9-]+\.ts\.net$/.test(name)) return
+      const addresses = await dns.lookup(name, { family: 4, all: true })
+      if (addresses.some(({ address }) => address === ip)) console.log(name)
+    })().catch(() => {}).finally(() => clearTimeout(timeout))
+  ' "$HOST")
+fi
+if [[ -n $tail_name ]]; then
+  short_name=${tail_name%%.*}
+  add_trust "$tail_name"
+  add_trust "$short_name"
 fi
 
 # Split TRUSTED_HOSTS on commas and whitespace without pathname expansion.
