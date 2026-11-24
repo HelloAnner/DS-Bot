@@ -56,8 +56,6 @@ export const JA = {
   "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "ローカルネットワーク内のブラウザーで直接チャットします。HTTP は暗号化されません。信頼できるネットワークでのみ使用してください。",
   "Browser address": "ブラウザーで開くアドレス",
   "LAN access password": "LAN アクセスパスワード",
-  "Local address": "ローカルアドレス",
-  "No private LAN address found.": "プライベート LAN アドレスが見つかりません。",
   "Copy browser link": "ブラウザーのリンクをコピー",
   "Clipboard is not available": "クリップボードを利用できません",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "サーバーは暗号化されたメッセージを中継します。ブラウザーでのアクセスでは、サーバーが提供するページも信頼します。",

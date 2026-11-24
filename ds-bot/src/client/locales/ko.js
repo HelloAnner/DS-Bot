@@ -56,8 +56,6 @@ export const KO = {
   "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "로컬 네트워크의 브라우저에서 바로 채팅합니다. HTTP는 암호화되지 않습니다. 신뢰할 수 있는 네트워크에서만 사용하세요.",
   "Browser address": "브라우저 주소",
   "LAN access password": "LAN 접속 비밀번호",
-  "Local address": "로컬 주소",
-  "No private LAN address found.": "사설 LAN 주소를 찾을 수 없습니다.",
   "Copy browser link": "브라우저 링크 복사",
   "Clipboard is not available": "클립보드를 사용할 수 없습니다",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "서버는 암호화된 메시지를 전달합니다. 브라우저 접근은 서버가 제공하는 페이지도 신뢰합니다.",

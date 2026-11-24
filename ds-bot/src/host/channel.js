@@ -1012,7 +1012,7 @@ export function install(rt) {
         if (!lan || !/^127\.0\.0\.1(?::[0-9]+)?$/.test(request.headers.get('host') ?? '') || rt.readOnly() !== undefined) {
           result = fail('LAN access is only available in the local desktop app.', 'bot/refused')
         } else {
-          try { result = ok(await lan(body.payload?.address)) }
+          try { result = ok(await lan(body.payload?.enabled)) }
           catch (error) { result = fail(error.message, 'bot/refused') }
         }
       } else result = await handle(String(body?.endpoint ?? ''), body?.payload, request.signal)

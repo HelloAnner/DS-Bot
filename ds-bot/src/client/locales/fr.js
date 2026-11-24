@@ -56,8 +56,6 @@ export const FR = {
   "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "Chat direct dans le navigateur sur le réseau local. HTTP n’est pas chiffré. À utiliser uniquement sur un réseau de confiance.",
   "Browser address": "Adresse à ouvrir dans le navigateur",
   "LAN access password": "Mot de passe d’accès au réseau local",
-  "Local address": "Adresse locale",
-  "No private LAN address found.": "Aucune adresse IP privée trouvée.",
   "Copy browser link": "Copier le lien du navigateur",
   "Clipboard is not available": "Le presse-papiers n’est pas disponible",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "Le serveur transmet les messages chiffrés. L’accès par navigateur fait aussi confiance à la page qu’il fournit.",

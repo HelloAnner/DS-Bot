@@ -10,8 +10,20 @@ const password = () => randomBytes(24).toString('base64url')
 const same = (a, b) => typeof a === 'string' && a.length === b.length
   && Buffer.byteLength(a) === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 const privateIPv4 = /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/
-const interfaces = () => Object.values(networkInterfaces()).flat().filter(entry =>
-  entry?.family === 'IPv4' && !entry.internal && entry.cidr && privateIPv4.test(entry.address))
+export function lanBindings(interfaces = networkInterfaces()) {
+  const bindings = new Map()
+  for (const entry of Object.values(interfaces).flat()) {
+    if (entry?.family !== 'IPv4' || entry.internal || !entry.cidr || !privateIPv4.test(entry.address)) continue
+    const prefix = Number(entry.cidr.split('/')[1])
+    if (prefix < 31) {
+      const bits = entry.address.split('.').reduce((value, octet) => value * 256 + Number(octet), 0)
+      const size = 2 ** (32 - prefix)
+      if (bits % size === 0 || bits % size === size - 1) continue
+    }
+    bindings.set(entry.address, { address: entry.address, prefix })
+  }
+  return [...bindings.values()]
+}
 
 export function lanChat(rt, call) {
   const target = (kind, id) => {
@@ -41,12 +53,7 @@ export function lanChat(rt, call) {
   }
 }
 
-export async function startLan({ address, prefix, port = PORT, chat, assets }) {
-  const allowed = new BlockList()
-  allowed.addSubnet(address, prefix)
-  const code = password()
-  const session = password()
-  let lastFailure = 0
+async function listen({ address, port, allowed, auth, chat, assets }) {
   const server = createServer({ requestTimeout: 5000, headersTimeout: 5000 }, (req, res) => {
     void dispatch(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() })
   })
@@ -70,8 +77,8 @@ export async function startLan({ address, prefix, port = PORT, chat, assets }) {
     if (req.headers.origin !== origin() || req.headers['content-type'] !== 'application/json') return reply(res, 403)
     const login = req.url === '/login'
     const cookies = (req.headers.cookie ?? '').split(';').map(part => part.trim())
-    if (!login && !cookies.some(cookie => same(cookie, `${COOKIE}=${session}`))) return reply(res, 401)
-    if (login && Date.now() - lastFailure < 1000) return reply(res, 429)
+    if (!login && !cookies.some(cookie => same(cookie, `${COOKIE}=${auth.session}`))) return reply(res, 401)
+    if (login && Date.now() - auth.lastFailure < 1000) return reply(res, 429)
     const chunks = []
     let size = 0
     for await (const chunk of req.iterator({ destroyOnReturn: false })) {
@@ -83,8 +90,8 @@ export async function startLan({ address, prefix, port = PORT, chat, assets }) {
     try { body = JSON.parse(Buffer.concat(chunks).toString()) } catch { return reply(res, 400) }
     if (body === null || typeof body !== 'object' || Array.isArray(body)) return reply(res, 400)
     if (login) {
-      if (!same(body.code, code)) { lastFailure = Date.now(); return reply(res, 401) }
-      res.setHeader('Set-Cookie', `${COOKIE}=${session}; Path=/; HttpOnly; SameSite=Strict`)
+      if (!same(body.code, auth.code)) { auth.lastFailure = Date.now(); return reply(res, 401) }
+      res.setHeader('Set-Cookie', `${COOKIE}=${auth.session}; Path=/; HttpOnly; SameSite=Strict`)
       return reply(res, 204)
     }
     return reply(res, 200, JSON.stringify(await chat(body)), 'application/json; charset=utf-8')
@@ -93,32 +100,53 @@ export async function startLan({ address, prefix, port = PORT, chat, assets }) {
     server.once('error', reject)
     server.listen(port, address, () => { server.off('error', reject); resolve() })
   })
-  return { url: `${origin()}/`, code, close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections() }) }
+  return { url: `${origin()}/`, port: server.address().port, close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections() }) }
+}
+
+export async function startLan({ bindings, port = PORT, chat, assets }) {
+  if (bindings.length === 0) throw new Error('No private LAN address found.')
+  const allowed = new BlockList()
+  for (const { address, prefix } of bindings) allowed.addSubnet(address, prefix)
+  const auth = { code: password(), session: password(), lastFailure: 0 }
+  const listeners = []
+  const close = () => Promise.all(listeners.map(listener => listener.close()))
+  try {
+    for (const { address } of bindings) {
+      const listener = await listen({ address, port, allowed, auth, chat, assets })
+      listeners.push(listener)
+      port = listener.port
+    }
+  } catch (error) {
+    await close()
+    throw error
+  }
+  return { urls: listeners.map(listener => listener.url), code: auth.code, close }
 }
 
 export function installLan(rt, call) {
   let active
   let disposed = false
   let queue = Promise.resolve()
-  const view = () => ({ addresses: interfaces().map(entry => entry.address), url: active?.url, code: active?.code })
+  const view = () => ({ urls: active?.urls ?? [], code: active?.code })
   rt.ctx.effect(() => () => {
     disposed = true
     return queue.then(() => active?.close())
   }, 'ds-bot: LAN access')
-  return (address) => {
+  return (enabled) => {
     const next = queue.then(async () => {
       if (disposed) throw new Error('DS Bot is stopping.')
-      if (address === undefined) return view()
-      const entry = address === null ? undefined : interfaces().find(item => item.address === address)
-      if (address !== null && !entry) throw new Error('Select a private LAN address on this computer.')
-      await active?.close()
-      active = undefined
-      if (entry) {
+      if (enabled === undefined || enabled === Boolean(active)) return view()
+      if (typeof enabled !== 'boolean') throw new Error('Invalid LAN access setting.')
+      if (!enabled) {
+        await active.close()
+        active = undefined
+      } else {
+        const bindings = lanBindings()
         const assets = Object.fromEntries([
           ['/', 'lan.html', 'text/html'], ['/lan.js', 'lan-page.js', 'text/javascript'], ['/lan.css', 'lan.css', 'text/css'],
         ].map(([route, file, type]) => [route, [readFileSync(new URL(`./lan/${file}`, import.meta.url)), `${type}; charset=utf-8`]]))
         try {
-          active = await startLan({ address, prefix: Number(entry.cidr.split('/')[1]), chat: lanChat(rt, call), assets })
+          active = await startLan({ bindings, chat: lanChat(rt, call), assets })
         } catch (error) {
           if (error?.code === 'EADDRINUSE') throw new Error(`LAN port ${PORT} is in use.`)
           throw error
