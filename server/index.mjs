@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { closeSync, constants, fchmodSync, fstatSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { connect, createServer } from 'node:net'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +21,7 @@ const HELP = `Usage: ds-bot-server [start|status|stop|restart|install-agent|unin
   --home PATH           Server data (DSH_HOME, default ~/.ds-bot-server)
   --host IP             Concrete bind IP (DS_BOT_HOST, default 127.0.0.1)
   --port NUMBER         HTTP port (DS_BOT_PORT, default 3080; 0 picks a free port)
+  --loopback            Also listen on 127.0.0.1 on the same port
   --trusted-host HOST   Extra browser authority; repeat to add more
   --public-url URL      Browser-facing URL behind a reverse proxy
   --restricted          Keep configured DSH permission defaults
@@ -35,7 +37,7 @@ const commands = ['start', 'status', 'stop', 'restart', 'install-agent', 'uninst
 const cliOptions = {
   from: { type: 'string' }, profile: { type: 'string' }, 'skip-work': { type: 'boolean' }, 'leave-regenerable': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' }, home: { type: 'string' }, host: { type: 'string' }, port: { type: 'string' },
-  'trusted-host': { type: 'string', multiple: true }, 'public-url': { type: 'string' },
+  loopback: { type: 'boolean' }, 'trusted-host': { type: 'string', multiple: true }, 'public-url': { type: 'string' },
   restricted: { type: 'boolean' }, 'runtime-dir': { type: 'string' }, open: { type: 'boolean' }, 'copy-url': { type: 'boolean' },
   'plist-dir': { type: 'string' }, 'dry-run': { type: 'boolean' }, 'stop-foreground': { type: 'boolean' },
 }
@@ -66,11 +68,12 @@ export function parseOptions(argv, env = process.env) {
   const runtimeDir = values['runtime-dir'] ?? env.DS_BOT_RUNTIME_DIR
   return { command, home, network: resolveNetwork(values, env),
     unrestricted: !values.restricted && env.DS_BOT_UNRESTRICTED !== '0', runtimeDir: runtimeDir ? resolve(runtimeDir) : undefined,
-    open: values.open, copyUrl: values['copy-url'], plistDir: values['plist-dir'], stopForeground: values['stop-foreground'], dryRun: values['dry-run'] }
+    loopback: values.loopback, open: values.open, copyUrl: values['copy-url'], plistDir: values['plist-dir'], stopForeground: values['stop-foreground'], dryRun: values['dry-run'] }
 }
 
 function startArgs(options) {
   return ['start', '--home', options.home, ...networkArgs(options.network),
+    ...(options.loopback ? ['--loopback'] : []),
     ...(options.runtimeDir ? ['--runtime-dir', options.runtimeDir] : []),
     ...(options.unrestricted ? [] : ['--restricted']), ...(options.open ? ['--open'] : [])]
 }
@@ -156,6 +159,36 @@ async function start(options) {
   }
 }
 
+// Forward the byte stream so DSH handles HTTP, WebSocket, and authentication
+// identically on both addresses. One DSH instance still owns all sessions.
+export async function listenLoopback(host, port, signal) {
+  const clients = new Set()
+  const listener = createServer(client => {
+    const upstream = connect({ host, port })
+    clients.add(client)
+    client.on('error', () => upstream.destroy())
+    upstream.on('error', () => client.destroy())
+    client.once('close', () => { clients.delete(client); upstream.destroy() })
+    upstream.once('close', () => client.end())
+    client.pipe(upstream).pipe(client)
+  })
+  const close = () => {
+    listener.close()
+    for (const client of clients) client.destroy()
+  }
+  await new Promise((resolve, reject) => {
+    listener.once('error', reject)
+    listener.listen(port, '127.0.0.1', () => {
+      listener.off('error', reject)
+      resolve()
+    })
+  })
+  if (signal.aborted) close()
+  else signal.addEventListener('abort', close, { once: true })
+  signal.throwIfAborted()
+  return listener
+}
+
 async function boot(options, signal) {
   process.env.DSH_HOME = options.home
   process.env.DS_BOT_SERVER = '1'
@@ -185,6 +218,9 @@ async function boot(options, signal) {
     const connection = ctx.get('connection')
     if (!webServer || !connection || !ctx.get('sessionController') || !ctx.get('workspaceRegistry')) {
       throw new Error('The server profile did not start the required web and session services.')
+    }
+    if (options.loopback && options.network.host !== '127.0.0.1') {
+      await listenLoopback(options.network.host, webServer.port, signal)
     }
     const url = advertisedUrl(options.network, webServer.port)
     const launchUrl = connection.authenticatedUrl(url)

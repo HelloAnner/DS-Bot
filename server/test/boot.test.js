@@ -2,15 +2,31 @@ import assert from 'node:assert/strict'
 import { fork, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { request as httpRequest } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { isServerStart, stopForeground } from '../index.mjs'
+import { isServerStart, listenLoopback, stopForeground } from '../index.mjs'
 import { serverProcess } from '../home-lock.mjs'
 
 const CLI = fileURLToPath(new URL('../index.mjs', import.meta.url))
+
+test('loopback forwards HTTP to the same server and stops on shutdown', async t => {
+  const controller = new AbortController()
+  const primary = createServer((req, res) => res.end(req.headers.host))
+  t.after(() => { controller.abort(); primary.closeAllConnections(); primary.close() })
+  primary.listen(0, '::1')
+  await once(primary, 'listening')
+  const { port } = primary.address()
+  const loopback = await listenLoopback('::1', port, controller.signal)
+  const url = `http://127.0.0.1:${port}`
+  assert.equal(await (await fetch(url)).text(), `127.0.0.1:${port}`)
+  const closed = once(loopback, 'close')
+  controller.abort()
+  await closed
+  await assert.rejects(fetch(url), { name: 'TypeError' })
+})
 
 test('isolated headless boot: HTTP, owner API, and shutdown', { timeout: 45000 }, async t => {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), '.dsh-test-server-')))

@@ -55,6 +55,7 @@ is_tail_ip() { [[ $1 =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\. ]] && is_
 
 network_args=()
 add_trust() { if [[ -n $1 ]]; then network_args+=(--trusted-host "$1"); fi; }
+for authority in 127.0.0.1 mac-mini-1002 mac-mini-1003; do add_trust "$authority"; done
 local_name=$(scutil --get LocalHostName 2>/dev/null || true)
 if [[ -n $local_name ]]; then add_trust "$local_name"; add_trust "$local_name.local"; fi
 
@@ -136,7 +137,7 @@ public_authority=$("$NODE_BIN" -e '
   } catch { process.exit(1) }
 ' "$PUBLIC_URL") || fail 'PUBLIC_URL must be an HTTP(S) URL without credentials, query, or fragment.'
 add_trust "$public_authority"
-network_args+=(--host "$HOST" --port "$PORT" --public-url "$PUBLIC_URL")
+network_args+=(--host "$HOST" --port "$PORT" --public-url "$PUBLIC_URL" --loopback)
 
 needs_build() {
   local packed=server/node_modules/ds-bot newer
