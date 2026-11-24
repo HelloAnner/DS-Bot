@@ -82,6 +82,8 @@ const trayIconFile = () => join(assets, process.platform === 'win32' ? 'tray.ico
 const material = materialOf(process.platform, release())
 configureIdentity(app)
 if (process.env.DS_BOT_SHELL_DATA) app.setPath('userData', process.env.DS_BOT_SHELL_DATA)
+const restoreLan = process.env.DS_BOT_RESTORE_LAN === '1'
+delete process.env.DS_BOT_RESTORE_LAN
 const frameFile = join(app.getPath('userData'), 'start-frame.json')
 
 // Loaded once the start window is up (loadModules).
@@ -588,7 +590,7 @@ function newHost() {
   return new HostProcess({
     entry: join(here, 'host.mjs'),
     cwd: profileDir(),
-    env: { ...process.env, DSH_HOME: places.dataDir, DS_BOT_PORT: String(port), DS_BOT_APP: '1', DS_BOT_USER_DSH_HOME: userDshHome(), DS_BOT_RUNTIME_DIR: runtimeDir(), ...(app.isPackaged && process.platform === 'darwin' ? { DS_BOT_COMPUTER_HELPER_HOME: join(app.getPath('userData'), 'computer-use') } : {}), ...(places.workspace ? { DS_BOT_WORKSPACE: places.workspace } : {}) },
+    env: { ...process.env, DSH_HOME: places.dataDir, DS_BOT_PORT: String(port), DS_BOT_APP: '1', ...(restoreLan ? { DS_BOT_RESTORE_LAN: '1' } : {}), DS_BOT_USER_DSH_HOME: userDshHome(), DS_BOT_RUNTIME_DIR: runtimeDir(), ...(app.isPackaged && process.platform === 'darwin' ? { DS_BOT_COMPUTER_HELPER_HOME: join(app.getPath('userData'), 'computer-use') } : {}), ...(places.workspace ? { DS_BOT_WORKSPACE: places.workspace } : {}) },
     pnpm: pnpmEntry(),
     onFailure: (error) => { if (mine === attempt) void fail(error) },
     output: hostOutput,

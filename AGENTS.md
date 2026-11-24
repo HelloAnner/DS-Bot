@@ -46,8 +46,8 @@ A change is done when `npm test`, the `--check` and `npm run lint` pass; CI runs
 ## Fork `feature` workflow
 
 - Keep the fork's `main` aligned with upstream `main`. Develop fork-only features and fixes on `feature`; do not merge them into `main`. The upstream branch and PR rules below apply only to upstream contributions.
-- On `feature`, after each feature or fix, run the relevant checks without launching a separate desktop app. Then run `make reload` from the repository root, commit only the intended changes (including generated files), and push with `git push origin feature`. Never force-push. If a check or reload fails, report it rather than treating the work as complete.
-- `make reload` requires native Node.js 24 on macOS. It rebuilds the plugin and desktop release, validates the replacement, quits the installed copy gracefully, backs it up, and replaces `/Applications/DS Bot.app`. It does not touch chat or workspace data, launch a test app, or open the replacement. Leave restarting DS Bot to the user. The user can run `make restart` on macOS to quit DS Bot gracefully and open the installed bundle without rebuilding. Do not run it as part of the automatic reload workflow.
+- On `feature`, after each feature or fix, run the relevant checks without launching a separate desktop app. Then run `make restart` from the repository root, commit only the intended changes (including generated files), and push with `git push origin feature`. Never force-push. If a check or restart fails, report it rather than treating the work as complete.
+- `make restart` requires native Node.js 24 on macOS. It builds and verifies the replacement while the installed app keeps running, then quits the old instance gracefully, backs it up, installs the replacement, opens it, and checks the Host. If the old app was serving LAN chat, the new app restores the listener with fresh credentials. If startup fails, the command attempts to restore and reopen the old app. It does not launch a separate test instance or change chat or workspace data.
 
 ## Branches, pull requests and issues
 

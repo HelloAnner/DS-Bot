@@ -1021,7 +1021,14 @@ export function install(rt) {
   }), 'ds-bot: api route')
 
   ctx.effect(() => {
-    void rt.load()
+    const loaded = rt.load()
+    if (lan && process.env.DS_BOT_RESTORE_LAN === '1') {
+      // Only the replacement launch of an app that was already serving LAN requests opts in.
+      delete process.env.DS_BOT_RESTORE_LAN
+      void loaded.then(() => {
+        if (rt.readOnly() === undefined) return lan(true)
+      }).catch(error => console.warn('DS Bot: could not restore LAN access:', error.message))
+    }
     // Registered last, so this disposer runs before the state lock is released.
     // In-flight side questions abort here; their entries stay answering for the
     // next owner.

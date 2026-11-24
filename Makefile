@@ -1,3 +1,3 @@
-.PHONY: reload restart
-reload restart:
-	/bin/bash scripts/reload-macos.sh $@
+.PHONY: restart
+restart:
+	/bin/bash scripts/restart-macos.sh
