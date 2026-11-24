@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DS Bot LAN</title><link rel="stylesheet" href="/lan.css"><script src="/lan.js" defer></script></head>
+<body>
+<main>
+<h1>DS Bot</h1>
+<form id="login" hidden>
+  <label for="code">LAN access password</label>
+  <p>Find it in DS Bot → Settings → General → LAN access.</p>
+  <input id="code" type="password" required autocomplete="current-password"> <button>Sign in</button>
+</form>
+<section id="chat" hidden>
+  <label for="target">Conversation</label> <select id="target"></select>
+  <button id="older" hidden>Older messages</button>
+  <div id="history" tabindex="0" aria-label="Messages"></div>
+  <form id="send"><label for="message">Message</label><textarea id="message" maxlength="16000" required></textarea><button>Send</button></form>
+</section>
+<p id="status" role="status"></p>
+</main>
+</body>
+</html>

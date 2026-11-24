@@ -170,6 +170,12 @@ var JA = {
   "Show a QR code": "QR コードを表示",
   "Open in a browser": "ブラウザーで開く",
   "Web browser": "ウェブブラウザー",
+  "LAN access": "LAN アクセス",
+  "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "ローカルネットワーク内のブラウザーで直接チャットします。HTTP は暗号化されません。信頼できるネットワークでのみ使用してください。",
+  "Browser address": "ブラウザーで開くアドレス",
+  "LAN access password": "LAN アクセスパスワード",
+  "Local address": "ローカルアドレス",
+  "No private LAN address found.": "プライベート LAN アドレスが見つかりません。",
   "Copy browser link": "ブラウザーのリンクをコピー",
   "Clipboard is not available": "クリップボードを利用できません",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "サーバーは暗号化されたメッセージを中継します。ブラウザーでのアクセスでは、サーバーが提供するページも信頼します。",
@@ -2865,6 +2871,12 @@ var KO = {
   "Show a QR code": "QR 코드 표시",
   "Open in a browser": "브라우저에서 열기",
   "Web browser": "웹 브라우저",
+  "LAN access": "LAN 접속",
+  "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "로컬 네트워크의 브라우저에서 바로 채팅합니다. HTTP는 암호화되지 않습니다. 신뢰할 수 있는 네트워크에서만 사용하세요.",
+  "Browser address": "브라우저 주소",
+  "LAN access password": "LAN 접속 비밀번호",
+  "Local address": "로컬 주소",
+  "No private LAN address found.": "사설 LAN 주소를 찾을 수 없습니다.",
   "Copy browser link": "브라우저 링크 복사",
   "Clipboard is not available": "클립보드를 사용할 수 없습니다",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "서버는 암호화된 메시지를 전달합니다. 브라우저 접근은 서버가 제공하는 페이지도 신뢰합니다.",
@@ -5605,6 +5617,12 @@ var ES = {
   "Show a QR code": "Mostrar un código QR",
   "Open in a browser": "Abrir en un navegador",
   "Web browser": "Navegador web",
+  "LAN access": "Acceso por LAN",
+  "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "Chat directo en el navegador dentro de la red local. HTTP no está cifrado. Úsalo solo en redes de confianza.",
+  "Browser address": "Dirección del navegador",
+  "LAN access password": "Contraseña de acceso por LAN",
+  "Local address": "Dirección local",
+  "No private LAN address found.": "No se encontró una dirección LAN privada.",
   "Copy browser link": "Copiar enlace del navegador",
   "Clipboard is not available": "El portapapeles no está disponible",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "El servidor retransmite mensajes cifrados. El acceso desde el navegador también confía en la página que sirve.",
@@ -8345,6 +8363,12 @@ var FR = {
   "Show a QR code": "Afficher un code QR",
   "Open in a browser": "Ouvrir dans un navigateur",
   "Web browser": "Navigateur web",
+  "LAN access": "Accès par réseau local",
+  "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "Chat direct dans le navigateur sur le réseau local. HTTP n’est pas chiffré. À utiliser uniquement sur un réseau de confiance.",
+  "Browser address": "Adresse à ouvrir dans le navigateur",
+  "LAN access password": "Mot de passe d’accès au réseau local",
+  "Local address": "Adresse locale",
+  "No private LAN address found.": "Aucune adresse IP privée trouvée.",
   "Copy browser link": "Copier le lien du navigateur",
   "Clipboard is not available": "Le presse-papiers n’est pas disponible",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "Le serveur transmet les messages chiffrés. L’accès par navigateur fait aussi confiance à la page qu’il fournit.",
@@ -11040,6 +11064,12 @@ var DE = {
   "Show a QR code": "QR-Code anzeigen",
   "Open in a browser": "Im Browser öffnen",
   "Web browser": "Webbrowser",
+  "LAN access": "LAN-Zugriff",
+  "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "Direkter Browserchat im lokalen Netzwerk. HTTP ist nicht verschlüsselt. Nur in vertrauenswürdigen Netzwerken verwenden.",
+  "Browser address": "Browser-Adresse",
+  "LAN access password": "Passwort für den LAN-Zugriff",
+  "Local address": "Lokale Adresse",
+  "No private LAN address found.": "Keine private LAN-Adresse gefunden.",
   "Copy browser link": "Browser-Link kopieren",
   "Clipboard is not available": "Die Zwischenablage ist nicht verfügbar",
   "The Server forwards encrypted messages. Browser access also trusts the page it serves.": "Der Server leitet verschlüsselte Nachrichten weiter. Der Browserzugriff vertraut auch der von ihm bereitgestellten Seite.",
@@ -14614,6 +14644,12 @@ var ZH = {
   "Show a QR code": "显示二维码",
   "Open in a browser": "在浏览器中打开",
   "Web browser": "网页浏览器",
+  "LAN access": "局域网访问",
+  "Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.": "在局域网内直接使用浏览器聊天。HTTP 不加密，请仅在可信网络使用。",
+  "Browser address": "浏览器地址",
+  "LAN access password": "局域网访问密码",
+  "Local address": "本机地址",
+  "No private LAN address found.": "未找到局域网地址。",
   "Copy browser link": "复制浏览器链接",
   "Clipboard is not available": "剪贴板不可用",
   "Your phone scans it once. After that it connects by itself.": "手机扫一次就行，以后会自动连接。",
@@ -42665,6 +42701,7 @@ function GeneralPage({ roster, actions, run: run2, dsh, openAdvanced = 0 }) {
       basicDsh.includes("composer-enter") ? dshItem(dsh, "composer-enter") : null
     ),
     (0, import_react59.createElement)(LocationsSection, { key: "places", actions, run: run2 }),
+    globalThis.dsBotApp ? (0, import_react59.createElement)(LanSection, { key: "lan" }) : null,
     (0, import_react59.createElement)(
       SetSection,
       { key: "more", className: "bt-dsh-items" },
@@ -42706,6 +42743,67 @@ function GeneralPage({ roster, actions, run: run2, dsh, openAdvanced = 0 }) {
       ] : null
     )
   ];
+}
+function LanSection() {
+  const [info, setInfo] = (0, import_react59.useState)(null);
+  const [picked, setPicked] = (0, import_react59.useState)("");
+  const [busy, setBusy] = (0, import_react59.useState)(false);
+  const [error, setError] = (0, import_react59.useState)("");
+  const [show2, setShow] = (0, import_react59.useState)(false);
+  (0, import_react59.useEffect)(() => {
+    void call("lan-access").then(setInfo, (error2) => setError(error2.message));
+  }, []);
+  const selected = info?.addresses.includes(picked) ? picked : info?.addresses[0] ?? "";
+  const change = async (address) => {
+    setBusy(true);
+    setShow(false);
+    setError("");
+    try {
+      setInfo(await call("lan-access", { address }));
+    } catch (error2) {
+      setError(error2.message);
+      await call("lan-access").then(setInfo, () => {
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = t("LAN access");
+  return (0, import_react59.createElement)(
+    SetSection,
+    { title: label },
+    (0, import_react59.createElement)(
+      SetRow,
+      { label, hint: t("Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.") },
+      (0, import_react59.createElement)(Switch, { label, on: Boolean(info?.url), disabled: busy || !info?.url && !selected, onChange: (on) => {
+        void change(on ? selected : null);
+      } })
+    ),
+    info?.url ? [
+      (0, import_react59.createElement)(
+        SetRow,
+        { key: "address", label: t("Browser address"), hint: info.url },
+        (0, import_react59.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => {
+          void navigator.clipboard.writeText(info.url).catch((error2) => setError(error2.message));
+        } }, t("Copy"))
+      ),
+      (0, import_react59.createElement)(
+        SetRow,
+        { key: "password", label: t("LAN access password"), hint: show2 ? (0, import_react59.createElement)("code", null, info.code) : null },
+        (0, import_react59.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", onClick: () => setShow((value) => !value) }, t(show2 ? "Hide" : "Show"))
+      )
+    ] : info?.addresses.length > 1 ? (0, import_react59.createElement)(
+      SetRow,
+      { label: t("Local address") },
+      (0, import_react59.createElement)(
+        "select",
+        { className: "bt-input", "aria-label": t("Local address"), value: selected, disabled: busy, onChange: (event) => setPicked(event.target.value) },
+        ...info.addresses.map((address) => (0, import_react59.createElement)("option", { key: address, value: address }, address))
+      )
+    ) : null,
+    info?.addresses.length === 0 && !info.url ? (0, import_react59.createElement)(SetRow, { label: t("No private LAN address found.") }) : null,
+    error ? (0, import_react59.createElement)("p", { role: "alert", className: "bt-phone-error" }, error) : null
+  );
 }
 function LocationsSection({ actions, run: run2 }) {
   const app = globalThis.dsBotApp;

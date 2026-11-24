@@ -1,0 +1,9 @@
+:root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+body { color: CanvasText; background: Canvas; margin: 0; }
+main { max-width: 56rem; margin: auto; padding: 1rem; }
+h1 { font-size: 1.6rem; }
+button, input, select, textarea { font: inherit; padding: .3rem .55rem; max-width: 100%; }
+#history { height: min(50vh, 36rem); overflow: auto; border-block: 1px solid GrayText; margin-block: .8rem; padding-inline: .7rem; }
+article { margin-block: .7rem; }
+article p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+textarea { display: block; width: 100%; box-sizing: border-box; min-height: 4rem; margin-bottom: .5rem; }

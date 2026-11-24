@@ -4,6 +4,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { PUBLISH_ISSUE } from './issue-report.js'
 import { install as installBtw } from './btw.js'
 import { install as installSide } from './side.js'
+import { installLan } from './lan.js'
 import { handoffReply, questionReply, viewReply } from './parts.js'
 import { threadCurrentOfPart, threadOfPart } from './threads.js'
 import { validateViewAnswer } from 'deep-view/core'
@@ -256,6 +257,7 @@ export function install(rt) {
     if (body.defaultBotModel !== undefined) await rt.syncRoomSessions?.()
   }
 
+  const lan = process.env.DS_BOT_APP === '1' ? installLan(rt, (...args) => handle(...args)) : undefined
   const handle = async (endpoint, payload, signal) => {
     try {
       const body = payload ?? {}
@@ -1005,8 +1007,16 @@ export function install(rt) {
     fetch: async (request) => {
       let body
       try { body = await request.json() } catch { body = {} }
-      const result = await handle(String(body?.endpoint ?? ''), body?.payload, request.signal)
-      return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } })
+      let result
+      if (body?.endpoint === 'lan-access') {
+        if (!lan || !/^127\.0\.0\.1(?::[0-9]+)?$/.test(request.headers.get('host') ?? '') || rt.readOnly() !== undefined) {
+          result = fail('LAN access is only available in the local desktop app.', 'bot/refused')
+        } else {
+          try { result = ok(await lan(body.payload?.address)) }
+          catch (error) { result = fail(error.message, 'bot/refused') }
+        }
+      } else result = await handle(String(body?.endpoint ?? ''), body?.payload, request.signal)
+      return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
     },
   }), 'ds-bot: api route')
 

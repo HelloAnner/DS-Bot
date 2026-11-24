@@ -1,3 +1,4 @@
+import { call } from './api.js'
 import { Component, createElement as h, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ACCENT_INKS, INKS } from './inks.js'
 import { isMainOf } from './sources.js'
@@ -328,6 +329,7 @@ function GeneralPage({ roster, actions, run, dsh, openAdvanced = 0 }) {
         h(Switch, { label: t('Enter sends message'), on: prefs.enterToSend !== false, onChange: enterToSend => run(actions.setPrefs({ enterToSend })) })),
       basicDsh.includes('composer-enter') ? dshItem(dsh, 'composer-enter') : null),
     h(LocationsSection, { key: 'places', actions, run }),
+    globalThis.dsBotApp ? h(LanSection, { key: 'lan' }) : null,
     h(SetSection, { key: 'more', className: 'bt-dsh-items' },
       h('button', {
         type: 'button',
@@ -353,6 +355,40 @@ function GeneralPage({ roster, actions, run, dsh, openAdvanced = 0 }) {
         ...more.map(id => dshItem(dsh, id)),
       ] : null),
   ]
+}
+
+function LanSection() {
+  const [info, setInfo] = useState(null)
+  const [picked, setPicked] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [show, setShow] = useState(false)
+  useEffect(() => { void call('lan-access').then(setInfo, error => setError(error.message)) }, [])
+  const selected = info?.addresses.includes(picked) ? picked : info?.addresses[0] ?? ''
+  const change = async (address) => {
+    setBusy(true)
+    setShow(false)
+    setError('')
+    try { setInfo(await call('lan-access', { address })) }
+    catch (error) {
+      setError(error.message)
+      await call('lan-access').then(setInfo, () => {})
+    } finally { setBusy(false) }
+  }
+  const label = t('LAN access')
+  return h(SetSection, { title: label },
+    h(SetRow, { label, hint: t('Direct browser chat on your local network. HTTP is not encrypted. Use only on a trusted network.') },
+      h(Switch, { label, on: Boolean(info?.url), disabled: busy || (!info?.url && !selected), onChange: on => { void change(on ? selected : null) } })),
+    info?.url ? [
+      h(SetRow, { key: 'address', label: t('Browser address'), hint: info.url },
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => { void navigator.clipboard.writeText(info.url).catch(error => setError(error.message)) } }, t('Copy'))),
+      h(SetRow, { key: 'password', label: t('LAN access password'), hint: show ? h('code', null, info.code) : null },
+        h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setShow(value => !value) }, t(show ? 'Hide' : 'Show'))),
+    ] : info?.addresses.length > 1 ? h(SetRow, { label: t('Local address') },
+      h('select', { className: 'bt-input', 'aria-label': t('Local address'), value: selected, disabled: busy, onChange: event => setPicked(event.target.value) },
+        ...info.addresses.map(address => h('option', { key: address, value: address }, address)))) : null,
+    info?.addresses.length === 0 && !info.url ? h(SetRow, { label: t('No private LAN address found.') }) : null,
+    error ? h('p', { role: 'alert', className: 'bt-phone-error' }, error) : null)
 }
 
 // The desktop app's preload hands its window `dsBotApp`; only there does the data location
